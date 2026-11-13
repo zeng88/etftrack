@@ -43,6 +43,17 @@ Wrangler 的 Workerd 本地运行时要求 macOS 13.5+；本机 macOS 12 不支�
    npm run deploy
    ```
 
+### GitHub Actions 自动部署
+
+推送到 `main` 后，`.github/workflows/deploy-cloudflare.yml` 会安装依赖、运行测试，并使用 Wrangler 部署 Worker。也可以在 GitHub 的 **Actions → Deploy to Cloudflare Workers → Run workflow** 手动触发。
+
+首次运行前，在 GitHub 仓库 **Settings → Secrets and variables → Actions** 添加：
+
+- `CLOUDFLARE_ACCOUNT_ID`：Cloudflare 账户 ID。
+- `CLOUDFLARE_API_TOKEN`：Cloudflare API Token。建议用 `Edit Cloudflare Workers` 权限模板，并仅授权部署用的 Cloudflare 账户。
+
+API Token 只保存在 GitHub Secrets，不能写入代码或提交到仓库。Cloudflare 原生 Workers Builds 若也启用，推送时可能重复部署；采用本 GitHub Actions 工作流后，可在 Worker 的 **Settings → Builds** 关闭原生 builds。
+
 Worker 绑定 D1 和 `static/`，并配置 UTC 工作日 15:15（北京时间 23:15）计划采集。盘中 API 返回腾讯公开行情估算，不将行情份额当成交易所确认的正式份额历史。正式份额只有当日核心 ETF 全部从交易所取齐时才写入；缺项时保留最近完整确认日。
 
 ## 数据口径
