@@ -180,37 +180,17 @@ def load_dashboard(code: str = "510300", days: int = 30) -> dict[str, Any]:
 
         core_codes = [item["code"] for item in rows if item.get("group") == "core"]
         aggregate_rows = conn.execute(
-            """SELECT h.trade_date,h.code,h.shares,h.source,c.close_price
-               FROM share_history h LEFT JOIN daily_closes c
-                 ON c.code=h.code AND c.trade_date=h.trade_date
+            """SELECT h.trade_date,h.code,h.shares,h.source
+               FROM share_history h
                WHERE h.code IN (SELECT code FROM etfs WHERE group_name='core')
                ORDER BY h.trade_date,h.code"""
         ).fetchall()
         by_date: dict[str, dict[str, float]] = {}
-        share_observations: dict[str, list[dict[str, Any]]] = {}
         unconfirmed_dates: set[str] = set()
         for row in aggregate_rows:
             by_date.setdefault(row["trade_date"], {})[row["code"]] = float(row["shares"])
             if row["source"] == "腾讯行情份额字段":
                 unconfirmed_dates.add(row["trade_date"])
-            else:
-                share_observations.setdefault(row["code"], []).append(dict(row))
-        for item in rows:
-            observations = share_observations.get(item["code"], [])
-            events = []
-            for index in range(1, len(observations)):
-                current, previous = observations[index], observations[index - 1]
-                delta_yi = (float(current["shares"]) - float(previous["shares"])) / 1e8
-                close_price = current["close_price"]
-                events.append({
-                    "date": current["trade_date"], "from_date": previous["trade_date"],
-                    "delta_yi": delta_yi,
-                    "amount_yi": delta_yi * float(close_price) if close_price is not None else None,
-                })
-            item["share_date"] = observations[-1]["trade_date"] if observations else None
-            item["share_yi"] = float(observations[-1]["shares"]) / 1e8 if observations else None
-            item["share_change_latest"] = events[-1] if events else None
-            item["share_change_previous"] = events[-2] if len(events) > 1 else None
         pool_history = []
         previous_total = None
         for date in sorted(by_date):

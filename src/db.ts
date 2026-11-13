@@ -34,30 +34,15 @@ export async function loadDashboard(db: D1Database) {
   const ratio = avg20_yi*progress ? amount_yi/(avg20_yi*progress) : 0;
   const verdict = ratio>=1.8 && flow_yi>0 ? "成交放量，份额估算偏流入" : ratio>=1.3 ? "成交较活跃，方向仍需观察" : "暂未看到明显放量";
   const history = await db.prepare(`
-    SELECT h.trade_date,h.code,h.shares,h.source,e.group_name,c.close_price FROM share_history h JOIN etfs e ON e.code=h.code
-    LEFT JOIN daily_closes c ON c.code=h.code AND c.trade_date=h.trade_date
+    SELECT h.trade_date,h.code,h.shares,h.source,e.group_name FROM share_history h JOIN etfs e ON e.code=h.code
     WHERE e.group_name='core' ORDER BY h.trade_date,h.code
-  `).all<{trade_date:string;code:string;shares:number;source:string;group_name:string;close_price:number|null}>();
+  `).all<{trade_date:string;code:string;shares:number;source:string;group_name:string}>();
   const codes = core.map(item => String(item.code));
   const byDate = new Map<string,Map<string,number>>(), unconfirmed = new Set<string>();
-  const shareByCode = new Map<string,{date:string;shares:number;close_price:number|null}[]>();
   for (const row of history.results ?? []) {
     if (row.source === "腾讯行情份额字段") unconfirmed.add(row.trade_date);
     if (!byDate.has(row.trade_date)) byDate.set(row.trade_date,new Map());
     byDate.get(row.trade_date)!.set(row.code,Number(row.shares));
-    if (row.source !== "腾讯行情份额字段") {
-      if (!shareByCode.has(row.code)) shareByCode.set(row.code,[]);
-      shareByCode.get(row.code)!.push({date:row.trade_date,shares:Number(row.shares),close_price:row.close_price==null?null:Number(row.close_price)});
-    }
-  }
-  for (const item of etfs) {
-    const observations=shareByCode.get(String(item.code))??[],events=[] as Record<string,unknown>[];
-    for(let index=1;index<observations.length;index++){
-      const current=observations[index],previous=observations[index-1],delta=(current.shares-previous.shares)/1e8;
-      events.push({date:current.date,from_date:previous.date,delta_yi:delta,amount_yi:current.close_price==null?null:delta*current.close_price});
-    }
-    Object.assign(item,{share_date:observations.at(-1)?.date??null,share_yi:observations.length?observations.at(-1)!.shares/1e8:null,
-      share_change_latest:events.at(-1)??null,share_change_previous:events.at(-2)??null});
   }
   let previous: number | null = null;
   const pool = [...byDate.keys()].sort().flatMap(date => {

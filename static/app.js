@@ -7,7 +7,6 @@
   let liveFlow = null;
   let selectedFlowDate = null;
   let currentFlowDetail = null;
-  let detailSort = "magnitude";
   let toastTimer = null;
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const number = (v,d=1) => Number.isFinite(Number(v)) ? Number(v).toLocaleString("zh-CN",{minimumFractionDigits:d,maximumFractionDigits:d}) : "—";
@@ -110,12 +109,14 @@
   function renderFlowDetailRows(){
     const d=currentFlowDetail;if(!d)return;
     const amountText=(value,coverage,count)=>value==null?"—":`${number(value,2)} 亿${count>coverage?`（${coverage}/${count} 只）`:""}`;
+    const buyFirst=Number(d.net_yi)>0,sellFirst=Number(d.net_yi)<0;
+    $("detail-sort-note").textContent=buyFirst?"当日合计为净申购，按净申购金额从高到低排列":sellFirst?"当日合计为净赎回，按净赎回金额从高到低排列":"当日净变化接近持平，按单只估算金额从高到低排列";
     const rows=[...d.items].sort((a,b)=>{
-      const buy=Number(b.buy_amount_yi)||0,sell=Number(b.sell_amount_yi)||0;
-      const prevBuy=Number(a.buy_amount_yi)||0,prevSell=Number(a.sell_amount_yi)||0;
-      const left=detailSort==="buy"?buy:detailSort==="sell"?sell:Math.max(buy,sell);
-      const right=detailSort==="buy"?prevBuy:detailSort==="sell"?prevSell:Math.max(prevBuy,prevSell);
-      return right-left||(Math.abs(Number(b.delta_yi)||0)-Math.abs(Number(a.delta_yi)||0))||String(a.code).localeCompare(String(b.code));
+      const aBuy=Number(a.buy_amount_yi)||0,aSell=Number(a.sell_amount_yi)||0;
+      const bBuy=Number(b.buy_amount_yi)||0,bSell=Number(b.sell_amount_yi)||0;
+      const aAmount=buyFirst?aBuy:sellFirst?aSell:Math.max(aBuy,aSell);
+      const bAmount=buyFirst?bBuy:sellFirst?bSell:Math.max(bBuy,bSell);
+      return bAmount-aAmount||(Math.abs(Number(b.delta_yi)||0)-Math.abs(Number(a.delta_yi)||0))||String(a.code).localeCompare(String(b.code));
     });
     $("detail-rows").innerHTML=rows.map(i=>`<tr><td><div class="etf-name"><span><b>${esc(i.name)}</b><small>${esc(i.code)}</small></span></div></td><td class="right ${tone(i.delta_yi)} money">${i.delta_yi==null?"—":`${signed(i.delta_yi,2)} 亿份`}</td><td class="right pos money">${amountText(i.buy_amount_yi,i.buy_amount_yi==null?0:1,1)}</td><td class="right neg money">${amountText(i.sell_amount_yi,i.sell_amount_yi==null?0:1,1)}</td><td class="right money">${i.volume_yi==null?"—":`${number(i.volume_yi,2)} 亿份`}</td><td class="right money">${i.amount_yi==null?"—":`${number(i.amount_yi,2)} 亿`}</td></tr>`).join("");
   }
@@ -158,12 +159,12 @@
   function renderTable(){
     const query=$("search").value.trim().toLowerCase(),scope=$("scope").value,sort=$("sort").value;
     let rows=(dashboard.etfs||[]).filter(i=>(scope==="all"||i.group===scope)&&(!query||[i.code,i.name,i.index].some(v=>String(v||"").toLowerCase().includes(query))));
-    const flow=i=>Number(i.share_change_latest?.amount_yi)||0,active=i=>{const outer=Number(i.outer_lots)||0,inner=Number(i.inner_lots)||0,total=outer+inner;return total?((outer-inner)/total)*(Number(i.amount_yi)||0):0;};
-    rows.sort((a,b)=>sort==="amount"?Number(b.amount_yi||0)-Number(a.amount_yi||0):sort==="ratio"?calcRatio(b)-calcRatio(a):sort==="change"?Number(b.pct||0)-Number(a.pct||0):sort==="huijin"?Number(b.huijin_yi||0)-Number(a.huijin_yi||0):sort==="flow"?Math.abs(flow(b))-Math.abs(flow(a)):Math.abs(active(b))-Math.abs(active(a)));
-    if(!rows.length){$("etf-rows").innerHTML='<tr><td colspan="11" class="empty-row">没有匹配的 ETF</td></tr>';return;}
-    const shareEvent=(event,label)=>{if(!event)return `<div class="share-event empty">${label}：暂无完整份额数据</div>`;const amount=event.amount_yi;return `<div class="share-event"><div><b class="${tone(amount??event.delta_yi)}">${amount==null?"金额待补":`${signed(amount,2)} 亿`}</b><small>${label} · ${esc(shortDate(event.date))} 较 ${esc(shortDate(event.from_date))}</small></div><span class="share-event-units ${tone(event.delta_yi)}">${signed(event.delta_yi,2)} 亿份</span></div>`;};
+    const active=i=>{const outer=Number(i.outer_lots)||0,inner=Number(i.inner_lots)||0,total=outer+inner;return total?((outer-inner)/total)*(Number(i.amount_yi)||0):0;};
+    rows.sort((a,b)=>sort==="amount"?Number(b.amount_yi||0)-Number(a.amount_yi||0):sort==="ratio"?calcRatio(b)-calcRatio(a):sort==="change"?Number(b.pct||0)-Number(a.pct||0):sort==="huijin"?Number(b.huijin_yi||0)-Number(a.huijin_yi||0):Math.abs(active(b))-Math.abs(active(a)));
+    if(!rows.length){$("etf-rows").innerHTML='<tr><td colspan="10" class="empty-row">没有匹配的 ETF</td></tr>';return;}
+    const turnoverComparison=item=>{const data=(item.hist||[]).filter(point=>point.amount_yi!=null&&Number.isFinite(Number(point.amount_yi))).map(point=>({...point,date:String(point.date)}));const tradeDate=String(item.date||"");if(tradeDate&&item.amount_yi!=null){const existing=data.findIndex(point=>point.date.replaceAll("-","")===tradeDate.replaceAll("-",""));if(existing>=0)data[existing].amount_yi=Number(item.amount_yi);else data.push({date:tradeDate,amount_yi:Number(item.amount_yi)});}data.sort((a,b)=>a.date.localeCompare(b.date));const latest=data.at(-1),previous=data.at(-2);if(!latest)return '<div class="turnover-comparison empty">暂无成交额数据</div>';const change=previous?Number(latest.amount_yi)-Number(previous.amount_yi):null;return `<div class="turnover-comparison"><b>${number(latest.amount_yi,2)} 亿</b><small>${esc(shortDate(latest.date))}</small><small class="${change==null?"neutral":tone(change)}">${previous?`较 ${esc(shortDate(previous.date))} ${signed(change,2)} 亿`:"暂无前一有数据日"}</small></div>`;};
     const spark=item=>{const data=(item.hist||[]).slice(-30).filter(point=>Number.isFinite(Number(point.amount_yi)));if(!data.length)return '<span class="turnover-spark empty">暂无</span>';const max=Math.max(...data.map(point=>Number(point.amount_yi)),.01);return `<span class="turnover-spark" aria-label="近30日成交额走势">${data.map((point,index)=>`<i class="${index===data.length-1?`latest ${tone(item.pct)}`:""}" style="height:${Math.max(4,Math.round(Number(point.amount_yi)/max*28))}px" title="${esc(shortDate(point.date))} ${number(point.amount_yi,2)} 亿"></i>`).join("")}</span>`;};
-    $("etf-rows").innerHTML=rows.map(item=>{const ratio=calcRatio(item),activeNet=active(item),tag=item.group==="core"?'<span class="tag">汪汪队</span>':'<span class="tag tag-watch">扩展</span>',recent=item.share_change_latest,previous=item.share_change_previous;return `<tr><td><div class="etf-name"><span><b>${esc(item.name)} ${tag}</b><small>${esc(item.code)}</small></span></div></td><td>${esc(item.index||"—")}</td><td class="right money">${number(item.mktcap_yi,1)}</td><td class="right money">${number(item.amount_yi,2)}</td><td class="right money">${number(calcRatio(item),2)}×</td><td class="right ${tone(activeNet)} money">${signed(activeNet,2)} 亿</td><td class="right ${tone(item.pct)} money">${signed(item.pct,2)}%</td><td class="right holding">${item.share_yi==null?"—":number(item.share_yi,2)}<span class="subnote">${item.share_date?esc(shortDate(item.share_date)):"无份额日期"}</span></td><td class="share-comparison">${shareEvent(recent,"最近")}${shareEvent(previous,"前次")}</td><td>${spark(item)}</td><td class="right holding">${item.huijin_yi==null?"—":`${number(item.huijin_yi,1)} 亿份`}</td></tr>`;}).join("");
+    $("etf-rows").innerHTML=rows.map(item=>{const ratio=calcRatio(item),activeNet=active(item),tag=item.group==="core"?'<span class="tag">汪汪队</span>':'<span class="tag tag-watch">扩展</span>';return `<tr><td><div class="etf-name"><span><b>${esc(item.name)} ${tag}</b><small>${esc(item.code)}</small></span></div></td><td>${esc(item.index||"—")}</td><td class="right money">${number(item.mktcap_yi,1)}</td><td class="right money">${number(item.amount_yi,2)}</td><td class="right money">${number(ratio,2)}×</td><td class="right ${tone(activeNet)} money">${signed(activeNet,2)} 亿</td><td class="right ${tone(item.pct)} money">${signed(item.pct,2)}%</td><td>${turnoverComparison(item)}</td><td>${spark(item)}</td><td class="right holding">${item.huijin_yi==null?"—":`${number(item.huijin_yi,1)} 亿份`}</td></tr>`;}).join("");
     $("table-count").textContent=`显示 ${rows.length} / ${dashboard.etfs.length} 只 ETF`;
   }
   function calcRatio(i){const base=Number(i.avg20_yi)||0,progress=Number(i.day_progress)||1;return base>0?Number(i.amount_yi||0)/(base*Math.max(progress,.0001)):0;}
@@ -177,8 +178,7 @@
   $("pool-stats-rows").addEventListener("click",event=>{const row=event.target.closest("tr[data-date]");if(!row)return;showFlowDetail(row.dataset.date).then(()=>$("flow-detail").scrollIntoView({behavior:"smooth",block:"center"}));});
   $("pool-stats-rows").addEventListener("keydown",event=>{const row=event.target.closest("tr[data-date]");if(row&&(event.key==="Enter"||event.key===" ")){event.preventDefault();row.click();}});
   $("search").addEventListener("input",renderTable);$("scope").addEventListener("change",renderTable);$("sort").addEventListener("change",renderTable);
-  $("detail-sort").addEventListener("change",()=>{detailSort=$("detail-sort").value;renderFlowDetailRows();});
-  loadDashboard().then(()=>refreshNow(true)).catch(e=>{$("signal-title").textContent="数据暂时不可用";$("signal-copy").textContent=e.message;$("etf-rows").innerHTML=`<tr><td colspan="11" class="empty-row">${esc(e.message)}</td></tr>`;toast(e.message,true);});
+  loadDashboard().then(()=>refreshNow(true)).catch(e=>{$("signal-title").textContent="数据暂时不可用";$("signal-copy").textContent=e.message;$("etf-rows").innerHTML=`<tr><td colspan="10" class="empty-row">${esc(e.message)}</td></tr>`;toast(e.message,true);});
   refreshLiveFlow();
   setInterval(refreshLiveFlow,20000);
 })();
