@@ -26,8 +26,8 @@
     const cloud=dashboard.runtime==="cloudflare";
     $("asof-date").textContent=dateLabel(dashboard.trade_date||newest?.date);
     $("asof-time").textContent=`行情时间 ${timeLabel(newest?.source_ts||newest?.ts)}`;
-    $("source-line").textContent=dashboard.source||"公开行情数据";
-    $("footer-source").textContent=dashboard.source||"腾讯行情公开接口 · 新浪 K 线";
+    $("source-line").textContent="行情来自公开数据，份额以交易所披露为准";
+    $("footer-source").textContent="公开行情 · 交易所份额披露";
     const conn=$("connection"),state=$("market-state"),fresh=$("freshness");
     const workerRun=run?.source==="Cloudflare Worker Cron";
     const failed=run?.status==="failed"&&(!cloud||workerRun);
@@ -48,7 +48,7 @@
     const ready=Number(s.amount_yi)>0&&Number(s.avg20_yi)>0;
     $("signal-title").textContent=!ready?"等待当日成交数据":ratio>=1.8?"观察到资金活跃迹象":ratio>=1.3?"成交有所活跃，方向待观察":"暂未看到明显介入迹象";
     $("signal-copy").textContent=ready?`核心池成交额约为历史同时点基线的 ${number(ratio,2)} 倍。份额与成交方向都是代理信号，不能确认具体交易账户。`:"当日成交数据尚未齐备，暂不生成资金活跃判断。";
-    $("signal-scope").textContent=`CORE ${s.core_count||20}`;
+    $("signal-scope").textContent=`重点池 ${s.core_count||20} 只`;
     $("scope-label").textContent=`${s.core_count||20} 只宽基 · ${Math.max(0,(s.total_count||24)-(s.core_count||20))} 只扩展`;
     $("today-signal-meter").style.width=`${Math.min(100,Math.max(0,ratio/2.5*100))}%`;
     $("metric-ratio").textContent=`${number(s.ratio,2)}×`;$("metric-ratio-note").textContent=`${number((s.progress||0)*100,0)}% 历史成交进度已完成`;$("ratio-meter").style.width=`${Math.min(100,Math.max(0,(Number(s.ratio)||0)/2.5*100))}%`;

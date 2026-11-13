@@ -1,4 +1,9 @@
 /* Typography refinements loaded after the brand-specific hero styles. */
+.hero-card{margin-top:24px}
+.hero-topline{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px}
+.hero-asof{display:flex;align-items:baseline;justify-content:flex-end;gap:8px;flex-wrap:wrap;color:#bdc9da;font-size:11px;font-weight:700}
+.hero-asof strong{color:#fff;font:700 13px var(--mono)}
+.hero-asof small{color:#aebdd0;font-size:11px;font-weight:600}
 .hero-main .hero-title{font-size:clamp(30px,3.2vw,42px)}
 .hero-main>p{font-size:14px;font-weight:600;line-height:1.8}
 .hero-timing{font-size:12px;font-weight:600;line-height:1.8}
@@ -18,6 +23,9 @@
 .signal-card-foot{flex-wrap:wrap;align-items:flex-start;font-size:11px}
 .signal-card-foot b{max-width:70%;font-size:10px;text-align:right;overflow-wrap:anywhere}
 @media(max-width:760px){
+  .hero-card{margin-top:16px}
+  .hero-topline{align-items:flex-start;flex-direction:column;gap:7px;margin-bottom:8px}
+  .hero-asof{justify-content:flex-start;gap:8px}
   .hero-main .hero-title{font-size:28px}
   .hero-main>p{font-size:13px}
   .hero-timing{font-size:11px}
