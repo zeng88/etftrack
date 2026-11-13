@@ -2,8 +2,8 @@
 .brand-mark img{display:block;width:100%;height:100%;object-fit:contain}
 
 .hero-card{grid-template-columns:minmax(0,1fr) minmax(340px,.58fr);gap:34px;min-height:250px;background:linear-gradient(118deg,#101f33 0%,#152b47 58%,#1b3659 100%)}
-.hero-main .hero-title{max-width:740px;margin:16px 0 12px;color:#f7f9fd;font-size:clamp(28px,3vw,39px);line-height:1.13;letter-spacing:-1.15px}
-.hero-main .hero-title span{display:block;color:#9dbbff}
+.hero-main .hero-title{max-width:none;margin:16px 0 12px;color:#f7f9fd;font-size:clamp(28px,3vw,39px);line-height:1.13;letter-spacing:-1.15px}
+.hero-main .hero-title span{display:inline;color:#9dbbff}
 .hero-main>p{max-width:760px;color:#bdc9da;font-size:14px;line-height:1.85}
 .hero-foot{margin-top:17px}
 .hero-timing{display:flex;flex-wrap:wrap;gap:5px 18px;margin-top:12px;color:#aebdd0;font-size:10px;line-height:1.6}
