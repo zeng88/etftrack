@@ -1,4 +1,4 @@
-# etftrack · 汪汪队 ETF 跟踪器
+# etftrack  汪汪队 ETF 跟踪器
 
 用于观察宽基 ETF 成交额与资金动向的仪表盘。当前机器本地使用 Python + SQLite；Cloudflare 部署使用 Worker + D1。两种模式共用 `static/` 页面和公开数据口径。
 
