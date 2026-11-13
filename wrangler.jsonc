@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "etftrack",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-13",
+  "assets": {
+    "directory": "./static",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "etf",
+      "database_id": "d2fdb466-fe14-4053-812e-aa506ba3acd5",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    "crons": ["15 15 * * 1-5"]
+  }
+}

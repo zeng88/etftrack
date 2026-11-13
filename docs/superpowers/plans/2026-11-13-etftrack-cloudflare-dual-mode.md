@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将项目改为单一 TypeScript Worker，在 Wrangler 本地 D1/SQLite 与指定 Cloudflare D1 上运行，并安全迁移历史数据、设置 GitHub 仓库和每日采集。
+**Goal:** 将项目改为本地 Python/SQLite 与 Cloudflare TypeScript Worker/D1 双模式，并安全迁移历史数据、设置 GitHub 仓库和每日采集。
 
-**Architecture:** 原生前端静态资源保留；Worker 负责 API、行情采集和 scheduled handler；D1 作为唯一 SQL 接口，本地由 Wrangler 提供持久化 SQLite，云端使用绑定的 D1。Python 只用于从现有 SQLite 生成/同步 D1 数据，不再运行网站服务。
+**Architecture:** 原生前端静态资源保留；当前机器本地以 Python/SQLite 服务运行；Cloudflare 部署使用独立 TypeScript Worker/D1 API 与 scheduled handler。Wrangler local D1 仍提供可选开发路径（需 macOS 13.5+ 或 Linux），但不是当前机器的本地默认路径。
 
 **Tech Stack:** TypeScript、Cloudflare Workers、Wrangler、D1、原生 HTML/CSS/JS、Python sqlite3 导入工具、Node `node:test`。
 
@@ -14,7 +14,7 @@
 
 - 项目根目录为 `/Users/admin/Documents/etftrack`，远端为 `https://github.com/zeng88/etftrack.git`。
 - 生产 D1 binding 为 `DB`，database id 为 `d2fdb466-fe14-4053-812e-aa506ba3acd5`。
-- 本地开发必须显式使用 Wrangler local D1；不得让日常开发命令写入远端 D1。
+- 本地默认使用 Python/SQLite；可选 Wrangler local D1 必须显式指定，任何本地命令不得隐式写远端 D1。
 - 远端导入/同步只允许幂等 upsert；不得自动清空或覆盖未知表/数据。
 - 静态资产路径保持 `static/`；浏览器 20 秒内只请求一个轻量聚合 API，不触发完整 collector 或 D1 写操作。
 - 交易所确认的份额与腾讯实时行情份额字段分离；未确认份额不可显示为正式日份额变化。
@@ -46,7 +46,7 @@
 - [ ] 建立 Node `node:test` 脚本，覆盖静态 asset fallback、未知 API 的 404 和 JSON headers。
 - [ ] 添加 Wrangler/TypeScript package scripts、`DB` binding、static assets 和 `.wrangler/state` 持久化目录。
 - [ ] 将 `start.command` 改为启动本地 `wrangler dev` 并打开本地地址，开发时不访问 remote D1。
-- [ ] 用 Wrangler 本地启动，确认首页、CSS、JS 和 API shell 返回正确状态。
+- [ ] 用本地 Python/SQLite 启动并确认首页、CSS、JS 和 API 可访问；记录 Wrangler 本机 Workerd 不兼容限制。
 
 ### Task 2: D1 migrations 与 SQLite 种子导入/同步工具
 
@@ -106,7 +106,7 @@
 
 **Files:**
 - Modify: `static/app.js`, `static/index.html`, `README.md`, `etf-turnover-site-implementation-plan.md`, `etf-turnover-tracker-design.md`
-- Delete after cutover: `app.py`, `collector.py`, `storage.py`, `update_data.py`, `schema.sql`
+- Keep: `app.py`, `collector.py`, `storage.py`, `update_data.py`, `schema.sql` as the supported local Python/SQLite runtime
 
 **Interfaces:**
 - Local default URL is Wrangler's `http://127.0.0.1:8787`.
@@ -114,8 +114,8 @@
 
 - [ ] 更新前端到组合 dashboard response，保留现有图表、统计区间、详情交互和 20 秒 live-refresh。
 - [ ] 更新 README 说明本地 SQLite D1、remote D1 binding、migration、同步、cron 时间和免费配额注意事项。
-- [ ] 删除已不再执行的 Python web server/collector/read-model，保留仅用于 SQLite 导入的工具。
-- [ ] 确认不带本机 SQLite 的 Git clone 可以 migrate + bootstrap 后启动本地网站。
+- [ ] 保留 Python 本地 web server/collector/read-model；部署 Worker 使用独立的 Worker adapter。
+- [ ] 确认干净 Git clone 可从 bootstrap 数据初始化 SQLite 并启动本地网站。
 
 ### Task 6: 现有数据远端迁移、账号验证与 GitHub 推送
 

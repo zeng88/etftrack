@@ -1,0 +1,20 @@
+{
+  "name": "etftrack",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "python3 app.py",
+    "dev:worker": "wrangler dev --persist-to=.wrangler/state",
+    "deploy": "wrangler deploy",
+    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test",
+    "db:migrate:local": "python3 scripts/migrate_sqlite.py",
+    "db:migrate:remote": "wrangler d1 migrations apply etf --remote",
+    "db:sync:local": "bash scripts/sync-d1.sh pull-local",
+    "db:sync:remote": "bash scripts/sync-d1.sh push-remote",
+    "db:export": "python3 scripts/sqlite_to_d1.py"
+  },
+  "devDependencies": {
+    "wrangler": "4.161.0"
+  }
+}

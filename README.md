@@ -1,37 +1,52 @@
-# 汪汪队ETF跟踪器（本地版）
+# etftrack · 汪汪队 ETF 跟踪器
 
-一个本地运行的 ETF 资金流观察仪表盘。使用 Python 标准库、SQLite 和原生 SVG，不需要 Git、npm 或第三方 Python 包；使用 macOS 自带 curl 通过系统证书校验 HTTPS 数据源。
+用于观察宽基 ETF 成交额与资金动向的仪表盘。当前机器本地使用 Python + SQLite；Cloudflare 部署使用 Worker + D1。两种模式共用 `static/` 页面和公开数据口径。
 
-## 启动
+## 本地运行（macOS 12 可用）
 
-- 在 Finder 中双击 `start.command`，会启动服务并打开网页。
-- 或在终端运行：
+- Finder 双击 `start.command`，自动启动服务并打开 `http://127.0.0.1:8765`。
+- 或运行 `npm run dev`（等价于 `python3 app.py`）。数据库为 `data/etf_tracker.sqlite3`，首次启动从 `data/bootstrap.json` 初始化。
+- 本地服务运行期间会按工作日北京时间 23:15 尝试更新；页面盘中行情约每 20 秒刷新。关闭服务后本机不再定时采集。
+- SQLite schema 由 `migrations/*.sql` 版本化；Python 服务启动时自动应用未执行迁移。也可以手动运行 `npm run db:migrate:local`。
 
-```bash
-cd ~/Documents/etf-national-team-tracker
-python3 app.py
-```
+## Cloudflare Worker + D1
 
-浏览器打开 <http://127.0.0.1:8765>。SQLite 文件在 `data/etf_tracker.sqlite3`。
+Wrangler 的 Workerd 本地运行时要求 macOS 13.5+；本机 macOS 12 不支持 `npm run dev:worker`。该命令可在较新 macOS 或满足 glibc 2.35 的 Linux 容器运行。部署与远程 D1 管理不依赖本地 Workerd。
 
-## 更新
+1. 安装 Node.js 22+ 并登录 Cloudflare：
 
-- 每次打开页面后自动检查最新交易日，并尝试补齐上次成功日期到当前日期的交易所份额数据。
-- 页面每 20 秒检查一次新行情并刷新展示，页头会显示检查状态和时间。
-- 新增汪汪队合计统计表，可选 1/3/6 个月和 1 年，展示份额变化、估算买入/赎回金额和成交倍量；点击日期行查看 ETF 明细。
-- 页面里的“立即更新”会从公开行情接口拉取当前 ETF 报价和 5 分钟 K 线。
-- 服务运行期间会在每个工作日北京时间 18:45 自动尝试更新；周末、节假日和上游日期未推进时会保留旧数据。
-- 也可以运行 `python3 update_data.py` 手动更新（需要先停止服务，避免同时写数据库）。
-- 本地服务停止后不会后台运行。确认页面和功能后，可将 SQLite 兼容的数据层迁移到 Cloudflare D1 并配置云端定时任务。
+   ```sh
+   npm install
+   npx wrangler login
+   ```
 
-## 数据与口径
+2. `wrangler.jsonc` 已设置远端 D1 `etf`（database ID `d2fdb466-fe14-4053-812e-aa506ba3acd5`）。登录后先检查目标库，再应用迁移：
 
-- 初始数据来自用户提供的参考快照：20 只重点 ETF 的份额历史（2025-11-03 至 2026-11-05）及 24 只 ETF 的 2026-11-06 快照；当前已补至 2026-11-13。
-- 更新时尝试使用上交所按日份额数据和深交所区间份额数据补齐缺口，并以腾讯当前份额记录最新交易日。只有 20 只重点 ETF 同日数据齐全时才绘制合计值；不以前值填充缺失数据。
-- 点击每日变化柱子可查看当天估算净申购/净赎回份额、单只 ETF 份额变化，以及可获得的二级市场成交量和成交额。
-- 统计金额按每日份额变化乘当日收盘价估算；成交倍量按当天池内成交额除以前 20 个交易日平均成交额计算。历史缺少精确成交额时，以日收盘价乘成交量估算。
-- 份额净变化可估算申购或赎回方向；二级市场成交量是买卖双方撮合的总量，不能拆成国家队的买入量和卖出量。
-- 份额变化乘价格是净申赎估算；成交内外盘差是成交方向估算。二者都不能识别交易者身份，也不能证明国家队当天买卖。
-- 数据来自交易所公开 ETF 规模披露、腾讯公开行情和新浪公开 K 线接口，可能延迟或变更；仅供研究观察，不构成投资建议。
+   ```sh
+   npx wrangler d1 list
+   npx wrangler d1 info etf
+   npm run db:migrate:remote
+   ```
 
-本地服务只监听 `127.0.0.1`，更新接口不对局域网开放。
+3. 将当前本机历史数据幂等合并到远端 D1（不会清空数据库；执行前先检查目标表）：
+
+   ```sh
+   npm run db:export
+   npm run db:sync:remote -- --remote
+   ```
+
+   手动生成的 SQL 位于 `data/d1-import.sql`，被 Git 忽略。后续云端数据合并回本机：`npm run db:sync:local`；这会导出远端 D1 并按主键合并到本机 SQLite，不删除本机记录。
+
+4. 部署：
+
+   ```sh
+   npm run deploy
+   ```
+
+Worker 绑定 D1 和 `static/`，并配置 UTC 工作日 15:15（北京时间 23:15）计划采集。盘中 API 返回腾讯公开行情估算，不将行情份额当成交易所确认的正式份额历史。正式份额只有当日核心 ETF 全部从交易所取齐时才写入；缺项时保留最近完整确认日。
+
+## 数据口径
+
+- 重点 ETF 池汇总份额变化、成交额与内外盘估算。份额增减不能识别申赎主体；内外盘估算不能确认具体投资者身份。
+- 日成交额/成交量来自公开行情；估算不等于国家队真实成交明细。接口或交易所数据延迟时显示最近有效日期。
+- Git 不包含本地 SQLite、Wrangler 状态、导入/导出 SQL 或任何 Cloudflare 凭据。

@@ -26,6 +26,16 @@ def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
 def initialize_db(path: Path | str = DB_PATH) -> bool:
     conn = connect(path)
     try:
+        conn.execute("CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)")
+        migrations_dir = ROOT / "migrations"
+        if migrations_dir.is_dir():
+            for migration in sorted(migrations_dir.glob("*.sql")):
+                applied = conn.execute("SELECT 1 FROM schema_migrations WHERE name=?", (migration.name,)).fetchone()
+                if applied:
+                    continue
+                conn.executescript("BEGIN IMMEDIATE;\n" + migration.read_text(encoding="utf-8") +
+                                   f"\nINSERT INTO schema_migrations(name,applied_at) VALUES('{migration.name}',datetime('now'));\nCOMMIT;")
+        # Keep the original schema as an idempotent compatibility check for local databases.
         conn.executescript((ROOT / "schema.sql").read_text(encoding="utf-8"))
         conn.execute("PRAGMA journal_mode = WAL")
         seeded = conn.execute("SELECT value FROM app_meta WHERE key='bootstrap_loaded'").fetchone()

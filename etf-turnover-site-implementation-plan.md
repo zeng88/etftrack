@@ -1,8 +1,8 @@
-# 汪汪队ETF跟踪器本地原型实施计划
+# etftrack · 汪汪队ETF跟踪器实施计划
 
 > **执行方式：** 由当前会话连续实施。按已批准需求实现本地 SQLite 版；不添加或运行测试套件，使用构建外的启动、数据库读回和页面/API 检查验证可用性。
 
-**Goal:** 在 `/Users/admin/Documents/etf-national-team-tracker` 交付可本地运行、带 SQLite 历史数据和每日更新能力的 ETF 资金跟踪器。
+**Goal:** 在 `/Users/admin/Documents/etftrack` 交付可本地运行并可部署到 Cloudflare Worker/D1 的 ETF 资金跟踪器。
 
 **Architecture:** Python 标准库负责本地 HTTP API、SQLite 和行情采集；原生 HTML/CSS/JS 与 SVG 提供仪表盘。数据仅绑定回环地址；后续由用户决定迁移到 Cloudflare Worker + D1。
 
@@ -12,12 +12,12 @@
 
 ## Global Constraints
 
-- 所有项目源码与 SQLite 文件均置于 `/Users/admin/Documents/etf-national-team-tracker`。
-- 本地服务只绑定 `127.0.0.1`；页面打开时自动更新，服务运行期间交易日收盘后 18:45（Asia/Shanghai）也会自动更新。
+- 所有项目源码与本地 SQLite 文件均置于 `/Users/admin/Documents/etftrack`。
+- 本地服务只绑定 `127.0.0.1`；页面打开时自动更新，服务运行期间交易日 23:15（Asia/Shanghai）也会自动更新。
 - 导入参考快照后，交易所历史份额已补到 2026-11-13；20 只重点 ETF 每日合计份额有 251 个完整交易日数据点。
 - 采集失败或行情日期未推进时，不覆盖最后成功数据。
 - 份额申赎估算、盘中主动买卖估算、历史持仓标签彼此区分；不把推算写成国家队已确认交易。
-- 当前阶段不使用 Git、npm、Cloudflare/D1、云端定时任务或发布服务。
+- Cloudflare Worker/D1、版本化数据库迁移和 GitHub `zeng88/etftrack` 属于当前项目交付内容。
 - 不添加或运行测试套件；用 Python 编译、启动、数据库/API读回与服务访问检查验证功能。
 
 ## Review Focus
@@ -60,7 +60,7 @@
 - [x] 解析新浪 5 分钟 K 线，构建当日成交进度与历史同时点基线。
 - [x] 校验来源日期和代码全集；获取失败或日期异常时保留最后成功数据。
 - [x] 按交易日期/代码幂等写入每日记录，计算份额变化估算、20 日基线和主动买卖估算。
-- [x] 提供 `POST /api/update`、页面打开自动刷新和本地 18:45 工作日调度。
+- [x] 提供 `POST /api/update`、页面打开自动刷新和本地 23:15 工作日调度。
 
 ### Task 3: 页面仪表盘和数据说明
 

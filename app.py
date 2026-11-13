@@ -112,7 +112,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def _next_close_run(now: datetime) -> datetime:
-    target = now.replace(hour=18, minute=45, second=0, microsecond=0)
+    target = now.replace(hour=23, minute=15, second=0, microsecond=0)
     if target <= now:
         target += timedelta(days=1)
     while target.weekday() >= 5:
@@ -137,7 +137,7 @@ def main() -> None:
     threading.Thread(target=_scheduler, name="etf-close-scheduler", daemon=True).start()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"汪汪队ETF跟踪器：http://{HOST}:{PORT}")
-    print("本地服务运行期间会在交易日收盘后尝试更新；按 Ctrl+C 停止。")
+    print("本地服务运行期间会在交易日 23:15（北京时间）尝试更新；按 Ctrl+C 停止。")
     try:
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:

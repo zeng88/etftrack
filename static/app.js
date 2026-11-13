@@ -123,7 +123,6 @@
   $("pool-stats-rows").addEventListener("keydown",event=>{const row=event.target.closest("tr[data-date]");if(row&&(event.key==="Enter"||event.key===" ")){event.preventDefault();row.click();}});
   $("search").addEventListener("input",renderTable);$("scope").addEventListener("change",renderTable);$("sort").addEventListener("change",renderTable);
   loadDashboard().then(()=>refreshNow(true)).catch(e=>{$("signal-title").textContent="本地数据暂时不可用";$("signal-copy").textContent=e.message;$("etf-rows").innerHTML=`<tr><td colspan="8" class="empty-row">${esc(e.message)}</td></tr>`;toast(e.message,true);});
-  setInterval(()=>refreshNow(true),20000);
   refreshLiveFlow();
   setInterval(refreshLiveFlow,20000);
 })();

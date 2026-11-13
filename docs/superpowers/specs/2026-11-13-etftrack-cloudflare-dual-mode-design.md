@@ -31,18 +31,18 @@
 
 ## 方案
 
-1. **推荐：同一 TypeScript Worker + Wrangler D1 local/remote。** Wrangler 本地 D1 底层是 SQLite，生产环境只切换到远端 D1 binding。前端与业务接口只维护一份；Python 仅保留为导入/同步工具。需要把 Python HTTP、SQLite 访问和 collector 改成 Worker API、D1 binding 与 `fetch()`。
-2. **本地 Python/SQLite + 另写 Cloudflare Worker/D1。** 本地改动少，但 API、采集逻辑、估算口径需要维护两份，容易产生本地与线上差异，不符合“保证两边都可用”的长期目标。
+1. **同一 TypeScript Worker + Wrangler D1 local/remote。** Wrangler 本地 D1 底层是 SQLite，生产环境只切换到远端 D1 binding。前端与业务接口只维护一份，避免维护两套后端。
+2. **本地 Python/SQLite + Cloudflare Worker/D1。** 两边 API 和部分采集/查询逻辑会重复，但能在当前 macOS 12.7.6 运行原有本地站点。
 3. **Cloudflare Python Worker + D1。** Cloudflare 支持 Python Worker/D1，但当前 `http.server`、`sqlite3` 本地连接、`subprocess/curl` 和线程采集器不能原样部署；仍需适配 Worker 运行时，不能省掉平台改造。
 
-选择方案 1：项目目前是单用户研究仪表盘，前端已与 API 分离，Wrangler 的本地 D1 正好提供 SQLite 本地运行与相同 Worker 代码；避免维护两套后端。现有 Python SQLite 文件通过批量转换和 Wrangler 导入迁移，不继续作为运行时数据库。
+原推荐方案 1 在目标电脑上不可用：Wrangler 所需 Workerd 最低 macOS 13.5，而本机为 macOS 12.7.6，且未安装 Docker/Podman/Colima。为满足本地可运行与 Cloudflare 部署两项要求，实施时采用方案 2：原 Python/SQLite 服务继续作为本地入口，新增 Worker/D1 云端入口；共用静态页面和接口字段约定，并用跨后端 fixture/API 测试减少口径漂移。该架构增加双份后端维护成本，是本机系统兼容限制下的明确取舍。
 
 ## 运行方式与数据流
 
-- `npm run dev` 启动 Wrangler 本地 Worker；静态文件从 `static/` 服务，API 访问本地 D1。保留 `start.command` 双击启动并打开本地网页。
+- `./start.command` 启动 Python 本地服务并打开网页，运行时数据库为项目 `data/etf_tracker.sqlite3`。`npm run dev` 可在 macOS 13.5+ 或兼容 Linux 容器中启动 Wrangler local D1 Worker；当前 macOS 12 不支持 Workerd。
 - `wrangler.jsonc` 定义 `DB` D1 binding、静态资源、兼容日期和 cron；local 与 production 使用同一 migration 序列。
 - 首次迁移从现有 `data/etf_tracker.sqlite3` 导出受支持的表数据，写成分批 SQL/JSON，再由 Wrangler 对 local 或 remote 执行；后续同步有 `pull` 和 `push` 方向，均可重复执行且不做全库删除。
-- Worker 路由保持 `/api/dashboard`、`/api/flow-detail`、`/api/pool-stats`、`/api/live-flow` 等前端接口语义。一个聚合接口支撑 20 秒更新，API 返回 `Cache-Control: no-store`，但不将 live quote 作为正式 share history 写入。
+- Worker 路由保持 `/api/dashboard`、`/api/flow-detail`、`/api/pool-stats`、`/api/live-flow` 等前端接口语义。实时行情不将 live quote 作为正式 share history 写入。当前页面由 20 秒轮询刷新行情，日常历史采集由独立计划任务完成。
 - scheduled handler 在北京时间 23:15（UTC 15:15）尝试官方份额回补，并对未到齐的代码保留上次确认记录；实时行情由页面轮询，不写 D1。
 
 ## 余项由实现者决定
