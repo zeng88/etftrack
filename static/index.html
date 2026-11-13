@@ -19,7 +19,7 @@
         <span class="brand-copy"><b>汪汪队ETF跟踪器</b><small>宽基 ETF 成交额与资金动向 · 用来判断今日国家队是否上班</small></span>
       </a>
       <div class="top-actions">
-        <span id="connection" class="connection"><i></i><span>本地数据库</span></span>
+        <span id="connection" class="connection"><i></i><span>行情服务连接中</span></span>
         <span id="refresh-status" class="refresh-status"><i></i><span>买卖估算每 20 秒刷新</span></span>
         <button id="refresh" class="button button-primary"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.2 6.8A6.5 6.5 0 1 0 16.5 10M16.2 3.7v3.8h-3.8"/></svg><span>立即更新</span></button>
       </div>
@@ -35,7 +35,7 @@
         <div class="asof-card">
           <span class="asof-label">数据日期</span>
           <strong id="asof-date">载入中</strong>
-          <span id="asof-time" class="asof-time">等待本地数据库</span>
+          <span id="asof-time" class="asof-time">等待行情数据</span>
         </div>
       </section>
 
@@ -153,7 +153,7 @@
         <div class="table-scroll">
           <table>
             <thead><tr><th>ETF / 代码</th><th>跟踪指数</th><th>分类</th><th class="right">涨跌幅</th><th class="right">成交额</th><th class="right">较 20 日均</th><th class="right">份额申赎估算</th><th class="right">汇金历史持仓</th></tr></thead>
-            <tbody id="etf-rows"><tr><td colspan="8" class="empty-row">正在读取 SQLite 历史数据…</td></tr></tbody>
+            <tbody id="etf-rows"><tr><td colspan="8" class="empty-row">正在读取历史行情数据…</td></tr></tbody>
           </table>
         </div>
         <div class="table-foot"><span id="table-count">—</span><span>金额单位：亿元；份额估算区间见各行标注</span></div>
@@ -174,7 +174,7 @@
       </section>
     </main>
 
-    <footer><span>ETF FLOW OBSERVER</span><span id="footer-source">本地 SQLite · 腾讯行情公开接口 · 新浪 K 线</span><span>仅供研究观察，不构成投资建议</span></footer>
+    <footer><span>ETF FLOW OBSERVER</span><span id="footer-source">腾讯行情公开接口 · 新浪 K 线</span><span>仅供研究观察，不构成投资建议</span></footer>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/app.js" defer></script>

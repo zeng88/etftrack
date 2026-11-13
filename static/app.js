@@ -19,26 +19,26 @@
   const shanghaiNow = () => new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).format(new Date());
   const marketPhase = now => {const weekday=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Shanghai",weekday:"short"}).format(new Date()).toLowerCase();if(weekday==="sat"||weekday==="sun")return "offday";const hm=now.slice(11,16);if((hm>="09:30"&&hm<="11:30")||(hm>="13:00"&&hm<="15:00"))return "open";if(hm>"11:30"&&hm<"13:00")return "lunch";return hm>="15:00"?"closed":"preopen";};
   function toast(message,isError=false){const el=$("toast");el.textContent=message;el.className=`toast show${isError?" error":""}`;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className="toast",3800);}
-  async function loadDashboard(){const [r,s]=await Promise.all([fetch("/api/dashboard",{cache:"no-store"}),fetch(`/api/pool-stats?days=${statsDays}`,{cache:"no-store"})]);if(!r.ok)throw new Error(`数据读取失败（${r.status}）`);dashboard=await r.json();if(!dashboard.etfs?.length)throw new Error(dashboard.error||"数据库中没有 ETF 快照");if(s.ok){const data=await s.json();poolStats=data.rows||[];}else poolStats=[];render();}
+  async function loadDashboard(){const [r,s]=await Promise.all([fetch("/api/dashboard",{cache:"no-store"}),fetch(`/api/pool-stats?days=${statsDays}`,{cache:"no-store"})]);if(!r.ok)throw new Error(`数据读取失败（${r.status}）`);dashboard=await r.json();if(!dashboard.etfs?.length)throw new Error(dashboard.error||"暂无 ETF 行情数据");if(s.ok){const data=await s.json();poolStats=data.rows||[];}else poolStats=[];render();}
   function render(){renderStatus();renderSummary();renderPoolCharts();renderPoolStats();renderTable();}
   function renderStatus(){
     const run=dashboard.latest_run,newest=dashboard.etfs[0];
     const cloud=dashboard.runtime==="cloudflare";
     $("asof-date").textContent=dateLabel(dashboard.trade_date||newest?.date);
     $("asof-time").textContent=`行情时间 ${timeLabel(newest?.source_ts||newest?.ts)}`;
-    $("source-line").textContent=`${dashboard.source||"公开行情"} · ${cloud?"Cloudflare D1":"SQLite 本地保存"}`;
-    $("footer-source").textContent=`${dashboard.source||"公开行情"} · ${cloud?"Cloudflare D1":"数据保存于本机"}`;
+    $("source-line").textContent=dashboard.source||"公开行情数据";
+    $("footer-source").textContent=dashboard.source||"腾讯行情公开接口 · 新浪 K 线";
     const conn=$("connection"),state=$("market-state"),fresh=$("freshness");
     const workerRun=run?.source==="Cloudflare Worker Cron";
     const failed=run?.status==="failed"&&(!cloud||workerRun);
     conn.classList.toggle("offline",Boolean(failed));
-    conn.querySelector("span").textContent=cloud?"Cloudflare D1":"本地 SQLite";
-    state.textContent=failed?`${cloud?"云端":"本地"}最近一次采集失败`:"资金观察台";
-    fresh.textContent=failed?"仍显示最近完整确认数据":cloud?"盘中行情每 20 秒刷新":run?.finished_at?`最近本地采集 ${timeLabel(run.finished_at)}`:"等待首次采集";
-    if(cloud&&!workerRun){$("collection-last-run").textContent="云端定时任务等待首次执行";}
+    conn.querySelector("span").textContent=failed?"行情采集异常":"行情服务正常";
+    state.textContent=failed?"最近一次采集失败":"资金观察台";
+    fresh.textContent=failed?"仍显示最近完整确认数据":cloud?"盘中行情每 20 秒刷新":run?.finished_at?`最近采集 ${timeLabel(run.finished_at)}`:"等待首次采集";
+    if(cloud&&!workerRun){$("collection-last-run").textContent="等待首次收盘采集";}
     else if(run){
       const label=run.status==="failed"?"采集失败":run.message?.includes("官方份额未齐")?"行情已更新，官方份额待发布":"采集成功";
-      $("collection-last-run").textContent=`${cloud?"云端":"本地"}${label} · ${timeLabel(run.finished_at)}`;
+      $("collection-last-run").textContent=`${label} · ${timeLabel(run.finished_at)}`;
     }else $("collection-last-run").textContent="尚无采集记录";
     const confirmed=(dashboard.history?.pool||[]).filter(row=>row.delta_yi!=null).at(-1)?.date;
     $("share-data-date").textContent=confirmed?`最新完整确认份额：${dateLabel(confirmed)}`:"尚无完整确认份额记录";
