@@ -13,6 +13,30 @@
 .signal-card>p{font-size:13px;font-weight:600;line-height:1.75}
 .signal-card-foot,.signal-card-foot b{font-size:12px;font-weight:700}
 .signal-live{font-size:11px;font-weight:600}
+.flow-detail-metrics{grid-template-columns:repeat(6,minmax(0,1fr))}
+.flow-detail-metrics strong{white-space:normal}
+.flow-detail-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 8px;color:#68776e;font-size:11px;font-weight:700}
+.flow-detail-toolbar .select-control{max-width:240px}
+.detail-table-scroll table{min-width:900px}
+.watchlist-table{min-width:1540px}
+.watchlist-table th,.watchlist-table td{vertical-align:middle}
+.watchlist-table th:nth-child(1){min-width:220px}
+.watchlist-table th:nth-child(2){min-width:100px}
+.watchlist-table th:nth-child(9){min-width:260px}
+.watchlist-table th:nth-child(10){min-width:145px}
+.share-comparison{min-width:250px}
+.share-event{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:3px 0}
+.share-event+.share-event{border-top:1px solid #edf0ed}
+.share-event>div{display:flex;align-items:baseline;gap:6px}
+.share-event b{font:700 11px var(--mono);white-space:nowrap}
+.share-event small,.share-event-units{color:#89958d;font-size:10px;font-weight:600;white-space:nowrap}
+.share-event.empty{color:#9aa49d;font-size:10px}
+.turnover-spark{display:flex;align-items:flex-end;gap:2px;width:132px;height:34px}
+.turnover-spark i{display:block;flex:1;min-width:2px;max-height:30px;border-radius:1px 1px 0 0;background:#d7dfd9}
+.turnover-spark i.latest{background:#aebbb2}
+.turnover-spark i.pos{background:var(--red)}
+.turnover-spark i.neg{background:var(--green)}
+.turnover-spark.empty{align-items:center;color:#9aa49d;font-size:10px}
 .source-sample{display:flex;align-items:center;flex-wrap:wrap;gap:6px 9px;margin-top:10px;padding-top:9px;border-top:1px solid rgba(223,233,249,.12);font-size:10px;font-weight:600}
 .source-sample>span,.source-sample small{color:#aebdd0}
 .source-sample a{color:#b8ceff;text-decoration:underline;text-underline-offset:3px}
@@ -37,6 +61,10 @@
   .signal-card h2{font-size:22px}
   .signal-card>p{font-size:12px}
   .signal-live{font-size:10px}
+  .flow-detail-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .flow-detail-toolbar{align-items:flex-start;flex-direction:column}
+  .flow-detail-toolbar .select-control{width:100%;max-width:none}
+  .watchlist-table{min-width:1480px}
   .source-sample{gap:5px 8px;margin-top:8px;padding-top:8px;font-size:10px}
   .live-estimates{gap:6px;margin-top:11px}
   .live-estimates div{padding:8px 7px}

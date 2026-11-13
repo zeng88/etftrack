@@ -93,11 +93,14 @@
             <div class="flow-detail-metrics">
               <div><span>估算净申购份额</span><strong id="detail-buy" class="pos">—</strong></div>
               <div><span>估算净赎回份额</span><strong id="detail-sell" class="neg">—</strong></div>
+              <div><span>估算净申购金额</span><strong id="detail-buy-amount" class="pos">—</strong></div>
+              <div><span>估算净赎回金额</span><strong id="detail-sell-amount" class="neg">—</strong></div>
               <div><span>ETF 二级市场成交量</span><strong id="detail-volume">—</strong></div>
               <div><span>ETF 二级市场成交额</span><strong id="detail-amount">—</strong></div>
             </div>
-            <div class="table-scroll detail-table-scroll"><table><thead><tr><th>重点 ETF</th><th class="right">份额净变化</th><th class="right">成交量</th><th class="right">成交额</th></tr></thead><tbody id="detail-rows"></tbody></table></div>
-            <p class="detail-note">份额净增加/减少是申购赎回方向估算；ETF 成交量是二级市场买卖双方撮合的总量，不能拆成国家队买入量和卖出量。</p>
+            <div class="flow-detail-toolbar"><span>逐只 ETF 按估算买卖金额排序</span><label for="detail-sort" class="sr-only">明细排序</label><select id="detail-sort" class="select-control"><option value="magnitude">买入或卖出金额从高到低</option><option value="buy">净申购金额优先</option><option value="sell">净赎回金额优先</option></select></div>
+            <div class="table-scroll detail-table-scroll"><table><thead><tr><th>重点 ETF</th><th class="right">份额净变化（亿份）</th><th class="right">估算净申购（亿元）</th><th class="right">估算净赎回（亿元）</th><th class="right">成交量（亿份）</th><th class="right">成交额（亿元）</th></tr></thead><tbody id="detail-rows"></tbody></table></div>
+            <p class="detail-note">申购/赎回金额按份额变化 × 当日收盘价估算，只代表 ETF 份额变化，不能确认国家队账户或真实成交。二级市场成交额是买卖双方撮合总额，不能拆分为国家队买入和卖出。</p>
           </section>
           <p class="chart-method"><b>估算方法：</b>重点 ETF 每日场内份额增减求和；正值表示份额净增加，负值表示净减少。份额公布频率与时点因交易所而异，缺少数据的日期不补造。份额变化也可能来自其他机构或个人投资者，本图不能确认国家队实际交易。</p>
         </article>
@@ -127,27 +130,27 @@
             <tbody id="pool-stats-rows"><tr><td colspan="7" class="empty-row">正在汇总汪汪队数据…</td></tr></tbody>
           </table>
         </div>
-        <div class="table-foot"><span id="pool-stats-count">—</span><span>点击日期行查看逐只 ETF 的份额变化、成交量与成交额</span></div>
+        <div class="table-foot"><span id="pool-stats-count">—</span><span>点击日期行查看逐只 ETF 的份额变化、估算金额与成交数据</span></div>
       </section>
 
       <section class="panel table-panel">
         <div class="panel-heading table-heading">
-          <div><h3>观察名单</h3><p>重点持仓历史标签与扩展对照组分开显示</p></div>
+          <div><h3>重点 ETF 行情与份额变化</h3><p>最近两次有数据日期并列展示；份额金额为申赎方向估算</p></div>
           <div class="table-tools">
             <label class="search-box"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.8" cy="8.8" r="5.7"/><path d="m13 13 4 4"/></svg><input id="search" type="search" placeholder="搜索代码、名称或指数" autocomplete="off"></label>
             <label class="sr-only" for="scope">名单范围</label>
             <select id="scope" class="select-control"><option value="all">全部 ETF</option><option value="core">重点观察</option><option value="watch">扩展对照</option></select>
             <label class="sr-only" for="sort">排序</label>
-            <select id="sort" class="select-control"><option value="flow">按申赎估算</option><option value="amount">按成交额</option><option value="ratio">按成交倍数</option><option value="change">按涨跌幅</option><option value="huijin">按历史持仓</option></select>
+            <select id="sort" class="select-control"><option value="active">按成交方向估算</option><option value="flow">按份额申赎估算</option><option value="amount">按成交额</option><option value="ratio">按成交倍数</option><option value="change">按涨跌幅</option><option value="huijin">按历史持仓</option></select>
           </div>
         </div>
-        <div class="table-scroll">
-          <table>
-            <thead><tr><th>ETF / 代码</th><th>跟踪指数</th><th>分类</th><th class="right">涨跌幅</th><th class="right">成交额</th><th class="right">较 20 日均</th><th class="right">份额申赎估算</th><th class="right">汇金历史持仓</th></tr></thead>
-            <tbody id="etf-rows"><tr><td colspan="8" class="empty-row">正在读取历史行情数据…</td></tr></tbody>
+        <div class="table-scroll watchlist-table-scroll">
+          <table class="watchlist-table">
+            <thead><tr><th>ETF</th><th>跟踪指数</th><th class="right">规模（亿元）</th><th class="right">成交额（亿元）</th><th class="right">较 20 日均</th><th class="right">成交方向估算¹</th><th class="right">涨跌</th><th class="right">最新份额（亿份）</th><th>最近两次份额变化估算²</th><th>近 30 日成交额</th><th class="right">汇金持仓（25 年报·亿份）</th></tr></thead>
+            <tbody id="etf-rows"><tr><td colspan="11" class="empty-row">正在读取历史行情数据…</td></tr></tbody>
           </table>
         </div>
-        <div class="table-foot"><span id="table-count">—</span><span>金额单位：亿元；份额估算区间见各行标注</span></div>
+        <div class="table-foot"><span id="table-count">—</span><span>¹ 按成交内外盘估算方向；² 份额变化 × 收盘价估算申赎金额，不能确认具体交易账户</span></div>
       </section>
 
       <section class="method-grid">

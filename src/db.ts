@@ -34,15 +34,30 @@ export async function loadDashboard(db: D1Database) {
   const ratio = avg20_yi*progress ? amount_yi/(avg20_yi*progress) : 0;
   const verdict = ratio>=1.8 && flow_yi>0 ? "成交放量，份额估算偏流入" : ratio>=1.3 ? "成交较活跃，方向仍需观察" : "暂未看到明显放量";
   const history = await db.prepare(`
-    SELECT h.trade_date,h.code,h.shares,h.source,e.group_name FROM share_history h JOIN etfs e ON e.code=h.code
+    SELECT h.trade_date,h.code,h.shares,h.source,e.group_name,c.close_price FROM share_history h JOIN etfs e ON e.code=h.code
+    LEFT JOIN daily_closes c ON c.code=h.code AND c.trade_date=h.trade_date
     WHERE e.group_name='core' ORDER BY h.trade_date,h.code
-  `).all<{trade_date:string;code:string;shares:number;source:string;group_name:string}>();
+  `).all<{trade_date:string;code:string;shares:number;source:string;group_name:string;close_price:number|null}>();
   const codes = core.map(item => String(item.code));
   const byDate = new Map<string,Map<string,number>>(), unconfirmed = new Set<string>();
+  const shareByCode = new Map<string,{date:string;shares:number;close_price:number|null}[]>();
   for (const row of history.results ?? []) {
     if (row.source === "腾讯行情份额字段") unconfirmed.add(row.trade_date);
     if (!byDate.has(row.trade_date)) byDate.set(row.trade_date,new Map());
     byDate.get(row.trade_date)!.set(row.code,Number(row.shares));
+    if (row.source !== "腾讯行情份额字段") {
+      if (!shareByCode.has(row.code)) shareByCode.set(row.code,[]);
+      shareByCode.get(row.code)!.push({date:row.trade_date,shares:Number(row.shares),close_price:row.close_price==null?null:Number(row.close_price)});
+    }
+  }
+  for (const item of etfs) {
+    const observations=shareByCode.get(String(item.code))??[],events=[] as Record<string,unknown>[];
+    for(let index=1;index<observations.length;index++){
+      const current=observations[index],previous=observations[index-1],delta=(current.shares-previous.shares)/1e8;
+      events.push({date:current.date,from_date:previous.date,delta_yi:delta,amount_yi:current.close_price==null?null:delta*current.close_price});
+    }
+    Object.assign(item,{share_date:observations.at(-1)?.date??null,share_yi:observations.length?observations.at(-1)!.shares/1e8:null,
+      share_change_latest:events.at(-1)??null,share_change_previous:events.at(-2)??null});
   }
   let previous: number | null = null;
   const pool = [...byDate.keys()].sort().flatMap(date => {
@@ -68,25 +83,30 @@ export async function loadDashboard(db: D1Database) {
 
 export async function loadFlowDetail(db: D1Database, date: string) {
   const {results=[]} = await db.prepare(`
-    SELECT e.code,e.name,h.shares,prev.shares AS prev_shares,a.amount_yi,a.volume_lots,h.source
+    SELECT e.code,e.name,h.shares,prev.shares AS prev_shares,a.amount_yi,a.volume_lots,h.source,c.close_price
     FROM etfs e JOIN share_history h ON h.code=e.code AND h.trade_date=?
     LEFT JOIN share_history prev ON prev.code=e.code AND prev.trade_date=(
       SELECT MAX(p.trade_date) FROM share_history p WHERE p.code=e.code AND p.trade_date<h.trade_date)
     LEFT JOIN daily_activity a ON a.code=e.code AND a.trade_date=h.trade_date
+    LEFT JOIN daily_closes c ON c.code=e.code AND c.trade_date=h.trade_date
     WHERE e.group_name='core' ORDER BY e.code
   `).bind(date).all<Record<string,unknown>>();
   if (results.some(row=>row.source==="腾讯行情份额字段")) return {date,core_count:results.length,items:[],buy_yi:0,sell_yi:0,net_yi:0,volume_yi:null,amount_yi:null,volume_coverage:0,amount_coverage:0};
   let buy=0,sell=0,volume=0,amount=0,volume_coverage=0,amount_coverage=0;
+  let buy_amount=0,sell_amount=0,buy_count=0,sell_count=0,buy_amount_coverage=0,sell_amount_coverage=0;
   const items=results.map(row=>{
     const delta=row.prev_shares==null?null:(Number(row.shares)-Number(row.prev_shares))/1e8;
     const volume_yi=row.volume_lots==null?null:Number(row.volume_lots)*100/1e8;
     const amount_yi=row.amount_yi==null?null:Number(row.amount_yi);
-    if(delta!==null){if(delta>0)buy+=delta;else sell+=Math.abs(delta);}
+    const estimated_amount_yi=delta!==null&&row.close_price!=null?delta*Number(row.close_price):null;
+    if(delta!==null){if(delta>0){buy+=delta;buy_count++;if(estimated_amount_yi!==null){buy_amount+=estimated_amount_yi;buy_amount_coverage++;}}else if(delta<0){sell+=Math.abs(delta);sell_count++;if(estimated_amount_yi!==null){sell_amount+=Math.abs(estimated_amount_yi);sell_amount_coverage++;}}}
     if(volume_yi!==null){volume+=volume_yi;volume_coverage++;}
     if(amount_yi!==null){amount+=amount_yi;amount_coverage++;}
-    return {code:row.code,name:row.name,delta_yi:delta,volume_yi,amount_yi,source:row.source};
+    return {code:row.code,name:row.name,delta_yi:delta,buy_amount_yi:estimated_amount_yi===null?null:Math.max(estimated_amount_yi,0),
+      sell_amount_yi:estimated_amount_yi===null?null:Math.abs(Math.min(estimated_amount_yi,0)),volume_yi,amount_yi,source:row.source};
   });
-  return {date,core_count:items.length,items,buy_yi:buy,sell_yi:sell,net_yi:buy-sell,
+  return {date,core_count:items.length,items,buy_yi:buy,sell_yi:sell,buy_amount_yi:buy_amount,sell_amount_yi:sell_amount,
+    buy_count,sell_count,buy_amount_coverage,sell_amount_coverage,net_yi:buy-sell,
     volume_yi:volume_coverage?volume:null,amount_yi:amount_coverage?amount:null,volume_coverage,amount_coverage};
 }
 

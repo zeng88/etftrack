@@ -180,16 +180,37 @@ def load_dashboard(code: str = "510300", days: int = 30) -> dict[str, Any]:
 
         core_codes = [item["code"] for item in rows if item.get("group") == "core"]
         aggregate_rows = conn.execute(
-            """SELECT trade_date,code,shares,source FROM share_history
-               WHERE code IN (SELECT code FROM etfs WHERE group_name='core')
-               ORDER BY trade_date,code"""
+            """SELECT h.trade_date,h.code,h.shares,h.source,c.close_price
+               FROM share_history h LEFT JOIN daily_closes c
+                 ON c.code=h.code AND c.trade_date=h.trade_date
+               WHERE h.code IN (SELECT code FROM etfs WHERE group_name='core')
+               ORDER BY h.trade_date,h.code"""
         ).fetchall()
         by_date: dict[str, dict[str, float]] = {}
+        share_observations: dict[str, list[dict[str, Any]]] = {}
         unconfirmed_dates: set[str] = set()
         for row in aggregate_rows:
             by_date.setdefault(row["trade_date"], {})[row["code"]] = float(row["shares"])
             if row["source"] == "腾讯行情份额字段":
                 unconfirmed_dates.add(row["trade_date"])
+            else:
+                share_observations.setdefault(row["code"], []).append(dict(row))
+        for item in rows:
+            observations = share_observations.get(item["code"], [])
+            events = []
+            for index in range(1, len(observations)):
+                current, previous = observations[index], observations[index - 1]
+                delta_yi = (float(current["shares"]) - float(previous["shares"])) / 1e8
+                close_price = current["close_price"]
+                events.append({
+                    "date": current["trade_date"], "from_date": previous["trade_date"],
+                    "delta_yi": delta_yi,
+                    "amount_yi": delta_yi * float(close_price) if close_price is not None else None,
+                })
+            item["share_date"] = observations[-1]["trade_date"] if observations else None
+            item["share_yi"] = float(observations[-1]["shares"]) / 1e8 if observations else None
+            item["share_change_latest"] = events[-1] if events else None
+            item["share_change_previous"] = events[-2] if len(events) > 1 else None
         pool_history = []
         previous_total = None
         for date in sorted(by_date):
@@ -236,7 +257,7 @@ def load_flow_detail(trade_date: str) -> dict[str, Any]:
     try:
         rows = conn.execute(
             """SELECT e.code,e.name,h.shares,prev.shares AS prev_shares,
-                      a.amount_yi,a.volume_lots,h.source
+                      a.amount_yi,a.volume_lots,h.source,c.close_price
                FROM etfs e
                JOIN share_history h ON h.code=e.code AND h.trade_date=?
                LEFT JOIN share_history prev ON prev.code=e.code AND prev.trade_date=(
@@ -244,6 +265,7 @@ def load_flow_detail(trade_date: str) -> dict[str, Any]:
                    WHERE p.code=e.code AND p.trade_date<h.trade_date
                )
                LEFT JOIN daily_activity a ON a.code=e.code AND a.trade_date=h.trade_date
+               LEFT JOIN daily_closes c ON c.code=e.code AND c.trade_date=h.trade_date
                WHERE e.group_name='core' ORDER BY e.code""", (trade_date,)
         ).fetchall()
         if any(row["source"] == "腾讯行情份额字段" for row in rows):
@@ -260,15 +282,28 @@ def load_flow_detail(trade_date: str) -> dict[str, Any]:
         total_volume_yi = 0.0
         volume_coverage = 0
         amount_coverage = 0
+        total_buy_amount_yi = 0.0
+        total_sell_amount_yi = 0.0
+        buy_count = sell_count = buy_amount_coverage = sell_amount_coverage = 0
         for row in rows:
             delta_yi = None if row["prev_shares"] is None else (float(row["shares"]) - float(row["prev_shares"])) / 1e8
             volume_yi = None if row["volume_lots"] is None else float(row["volume_lots"]) * 100 / 1e8
             amount_yi = None if row["amount_yi"] is None else float(row["amount_yi"])
+            estimated_amount_yi = delta_yi * float(row["close_price"]) if delta_yi is not None and row["close_price"] is not None else None
             if delta_yi is not None:
                 if delta_yi > 0:
                     total_buy_yi += delta_yi
+                    buy_count += 1
+                    if estimated_amount_yi is not None:
+                        total_buy_amount_yi += estimated_amount_yi
+                        buy_amount_coverage += 1
                 else:
                     total_sell_yi += abs(delta_yi)
+                    if delta_yi < 0:
+                        sell_count += 1
+                        if estimated_amount_yi is not None:
+                            total_sell_amount_yi += abs(estimated_amount_yi)
+                            sell_amount_coverage += 1
             if volume_yi is not None:
                 total_volume_yi += volume_yi
                 volume_coverage += 1
@@ -277,11 +312,16 @@ def load_flow_detail(trade_date: str) -> dict[str, Any]:
                 amount_coverage += 1
             items.append({
                 "code": row["code"], "name": row["name"], "delta_yi": delta_yi,
+                "buy_amount_yi": max(estimated_amount_yi, 0) if estimated_amount_yi is not None else None,
+                "sell_amount_yi": abs(min(estimated_amount_yi, 0)) if estimated_amount_yi is not None else None,
                 "volume_yi": volume_yi, "amount_yi": amount_yi, "source": row["source"],
             })
         return {
             "date": trade_date, "core_count": len(items), "items": items,
             "buy_yi": total_buy_yi, "sell_yi": total_sell_yi,
+            "buy_amount_yi": total_buy_amount_yi, "sell_amount_yi": total_sell_amount_yi,
+            "buy_count": buy_count, "sell_count": sell_count,
+            "buy_amount_coverage": buy_amount_coverage, "sell_amount_coverage": sell_amount_coverage,
             "net_yi": total_buy_yi - total_sell_yi,
             "volume_yi": total_volume_yi if volume_coverage else None,
             "amount_yi": total_amount_yi if amount_coverage else None,
