@@ -9,6 +9,7 @@
   <title>汪汪队ETF跟踪器</title>
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/brand.css">
+  <link rel="stylesheet" href="/readability.css">
 </head>
 <body>
   <div class="shell">
@@ -19,7 +20,7 @@
       </a>
       <div class="top-actions">
         <span id="connection" class="connection"><i></i><span>本地数据库</span></span>
-        <span id="refresh-status" class="refresh-status"><i></i><span>盘中行情每 20 秒刷新</span></span>
+        <span id="refresh-status" class="refresh-status"><i></i><span>买卖估算每 20 秒刷新</span></span>
         <button id="refresh" class="button button-primary"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.2 6.8A6.5 6.5 0 1 0 16.5 10M16.2 3.7v3.8h-3.8"/></svg><span>立即更新</span></button>
       </div>
     </header>
@@ -48,11 +49,16 @@
         </div>
         <aside class="signal-card" aria-label="今日资金代理信号">
           <div class="signal-card-head"><span>今日判断 · 代理信号</span><b id="signal-scope">CORE 20</b></div>
-          <h2 id="signal-title">正在读取市场信号…</h2>
-          <p id="signal-copy">信号由成交额与份额变化估算，不能识别交易账户。</p>
+          <h2 id="signal-title">正在读取实时买卖估算…</h2>
+          <p id="signal-copy">每 20 秒重取公开行情，估算主动买卖方向；不能识别国家队账户。</p>
+          <div class="live-estimates" aria-label="重点 ETF 主动买卖估算">
+            <div><span>估算主动买入</span><b id="live-buy">—</b></div>
+            <div><span>估算主动卖出</span><b id="live-sell">—</b></div>
+            <div><span>估算净方向</span><b id="live-net">—</b></div>
+          </div>
           <div class="signal-meter"><i id="today-signal-meter"></i></div>
-          <div class="signal-card-foot"><span>观察范围</span><b id="scope-label">20 只宽基 · 4 只扩展</b></div>
-          <div class="signal-live"><span id="live-update-label">盘中行情每 20 秒刷新</span><span id="live-update-time">等待行情</span></div>
+          <div class="signal-card-foot"><span id="scope-label">20 只宽基 · 4 只扩展</span><b id="live-source">行情源时间等待中</b></div>
+          <div class="signal-live"><span id="live-update-label">每 20 秒重新采集估算</span><span id="live-update-time">等待行情</span></div>
         </aside>
         <div class="hero-watermark" aria-hidden="true">ETF</div>
       </section>

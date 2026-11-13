@@ -1,0 +1,34 @@
+/* Typography refinements loaded after the brand-specific hero styles. */
+.hero-main .hero-title{font-size:clamp(30px,3.2vw,42px)}
+.hero-main>p{font-size:14px;font-weight:600;line-height:1.8}
+.hero-timing{font-size:12px;font-weight:600;line-height:1.8}
+.signal-card-head{font-size:13px;font-weight:700}
+.signal-card-head b{font-size:11px}
+.signal-card h2{font-size:25px}
+.signal-card>p{font-size:13px;font-weight:600;line-height:1.75}
+.signal-card-foot,.signal-card-foot b{font-size:12px;font-weight:700}
+.signal-live{font-size:11px;font-weight:600}
+.live-estimates{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:14px 0 4px}
+.live-estimates div{min-width:0;padding:9px 10px;border:1px solid rgba(223,233,249,.12);border-radius:10px;background:rgba(255,255,255,.045)}
+.live-estimates span,.live-estimates b{display:block}
+.live-estimates span{color:#bdc9da;font-size:10px;font-weight:700}
+.live-estimates b{margin-top:4px;color:#f7f9fd;font:700 14px var(--mono);white-space:nowrap}
+.live-estimates .buy-tone{color:#ffaaa3}
+.live-estimates .sell-tone{color:#8bd7ac}
+.signal-card-foot{flex-wrap:wrap;align-items:flex-start;font-size:11px}
+.signal-card-foot b{max-width:70%;font-size:10px;text-align:right;overflow-wrap:anywhere}
+@media(max-width:760px){
+  .hero-main .hero-title{font-size:28px}
+  .hero-main>p{font-size:13px}
+  .hero-timing{font-size:11px}
+  .signal-card-head{font-size:12px}
+  .signal-card h2{font-size:22px}
+  .signal-card>p{font-size:12px}
+  .signal-live{font-size:10px}
+  .live-estimates{gap:6px;margin-top:11px}
+  .live-estimates div{padding:8px 7px}
+  .live-estimates span{font-size:9px}
+  .live-estimates b{font-size:12px}
+  .signal-card-foot{font-size:10px}
+  .signal-card-foot b{font-size:9px}
+}

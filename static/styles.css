@@ -20,3 +20,120 @@
 .brand{gap:13px}.brand-mark{width:48px;height:48px;border-radius:15px}.brand-mark svg{width:28px;height:28px}.brand-copy{min-width:0}.brand b{font-size:19px;line-height:1.2;letter-spacing:.3px;font-weight:750;white-space:nowrap}.brand small{margin-top:4px;font-size:12px;line-height:1.4}
 @media(max-width:760px){.topbar{align-items:flex-start;flex-direction:column;gap:12px}.brand{width:100%;align-items:flex-start}.brand-copy{flex:1}.brand-mark{width:42px;height:42px;flex:0 0 42px}.brand-copy b{font-size:17px}.brand small{max-width:440px;font-size:11px}.top-actions{width:100%;justify-content:flex-end}}
 .stats-row .stats-buy.active,.stats-row .stats-sell.active{color:#fff;font:500 10px var(--mono)}.stats-row .stats-buy.active{background:#bf443d}.stats-row .stats-sell.active{background:#38855a}
+
+/* Shared visual system and readable type scale */
+:root{--bg:#f3f6f4;--paper:#fff;--ink:#17251d;--muted:#68776e;--line:#dfe7e1;--soft:#f1f5f2;--green:#187b50;--green-soft:#e8f3ec;--red:#c8423d;--blue:#2868a6;--shadow:0 5px 18px rgba(24,43,31,.055)}
+body{font-size:15px;line-height:1.65}
+.shell{max-width:1500px}
+.topbar{border-color:var(--line)}
+.brand small,.connection,.refresh-status,.button{font-size:13px}
+.eyebrow,.section-label{font-size:11px;font-weight:700;letter-spacing:1.2px}
+.intro-copy{font-size:15px;font-weight:500;color:#65766c}
+.asof-card{min-width:170px;padding:12px 15px;border-radius:12px}
+.asof-label,.asof-time{font-size:12px;font-weight:600}
+.asof-card strong{font-size:18px;font-weight:600}
+.hero-card,.metric-card,.panel,.method-card{border-radius:16px}
+.hero-card{box-shadow:0 12px 30px rgba(24,51,34,.11)}
+.hero-main>p,.hero-main p{font-size:14px;font-weight:500;line-height:1.75}
+.hero-kicker,.state-pill,.hero-number span,.hero-number small{font-size:12px;font-weight:600}
+.hero-foot{font-size:11px;font-weight:600}
+.hero-timing{font-size:12px;font-weight:600;line-height:1.75}
+.signal-card{border-radius:18px}
+.signal-card-head{font-size:13px;font-weight:700}
+.signal-card-head b{font-size:11px}
+.signal-card h2{font-size:25px}
+.signal-card>p{font-size:13px;font-weight:500;line-height:1.75}
+.signal-card-foot,.signal-card-foot b{font-size:12px;font-weight:700}
+.signal-live{font-size:11px;font-weight:600}
+.metric-card,.chart-panel,.method-card{border-color:var(--line);box-shadow:var(--shadow)}
+.metric-card{min-height:126px;padding:17px 18px 15px}
+.metric-top{font-size:13px;font-weight:700;color:#5e7065}
+.metric-icon{width:28px;height:28px;font-size:15px}
+.metric-value{font-size:25px;font-weight:600}
+.metric-card small{margin-top:2px;color:#68796f;font-size:12px;font-weight:600}
+.meter{height:4px}
+.charts-grid,.pool-stats-panel,.table-panel,.method-grid{gap:16px}
+.charts-grid,.pool-stats-panel,.table-panel,.method-grid{margin-top:16px}
+.chart-panel{padding:20px 21px 16px}
+.panel-heading h3,.pool-stats-heading h3{font-size:17px;font-weight:750}
+.panel-heading p,.pool-stats-heading p{color:#68776e;font-size:12px;font-weight:600;line-height:1.6}
+.select-control{font-size:12px;font-weight:600}
+.segmented{border-radius:9px;background:#edf2ee}
+.segmented button{height:30px;padding:0 11px;font-size:12px;font-weight:700;color:#617067}
+.segmented button.active{color:#173f2b}
+.chart-summary strong{font-size:19px;font-weight:600}
+.chart-summary span,.pool-chart-summary{font-size:11px;font-weight:600}
+.axis-label,.chart-date{font-size:10px}
+.legend{font-size:11px;font-weight:600}
+.chart-caption{font-size:11px;font-weight:600;line-height:1.6}
+.chart-caption strong{font-size:11px;font-weight:700}
+.chart-method{color:#68776e;font-size:12px;font-weight:500;line-height:1.8}
+.chart-method b{color:#34483a;font-weight:800}
+.table-heading,.pool-stats-heading{padding:19px 20px 15px}
+.search-box{height:36px}
+.search-box input,.search-box input::placeholder{font-size:12px;font-weight:600}
+.table-scroll table{font-size:12px}
+table{font-size:12px}
+th{padding:12px;color:#5e7065;font-size:11px;font-weight:750}
+td{padding:12px;color:#34443a}
+.etf-name b{font-size:12px;font-weight:750}
+.etf-name small,.subnote{font-size:10px;font-weight:600}
+.mini-mark{width:30px;height:30px;font-size:10px}
+.tag,.signal-tag{padding:4px 8px;font-size:10px;font-weight:700}
+.money,.holding{font-size:11px;font-weight:600}
+.stats-row .stats-tinted,.stats-date,.stats-row .stats-buy.active,.stats-row .stats-sell.active{font-size:11px;font-weight:700}
+.table-foot{padding:12px 18px;color:#627269;font-size:11px;font-weight:600}
+.flow-detail{padding:14px;border-radius:12px}
+.flow-detail-head span,.flow-detail-metrics span{color:#617067;font-size:12px;font-weight:700}
+.flow-detail-head strong{font-size:14px;font-weight:700}
+.flow-detail-head button{font-size:12px;font-weight:700}
+.flow-detail-metrics div{padding:10px;border-radius:9px;background:#f0f4f1}
+.flow-detail-metrics strong{font-size:13px;font-weight:700}
+.detail-table-scroll table{font-size:11px}
+.detail-table-scroll th,.detail-table-scroll td{padding:9px 8px}
+.detail-note{color:#65756b;font-size:11px;font-weight:600;line-height:1.7}
+.method-card{min-height:140px;padding:18px}
+.method-card h3{font-size:16px;font-weight:750}
+.method-card h4{font-size:13px;font-weight:750}
+.method-card p{color:#65756b;font-size:12px;font-weight:500;line-height:1.8}
+.method-index{font-size:11px;font-weight:700}
+footer{color:#68776e;font-size:10px;font-weight:700}
+.chart-empty{font-size:12px;font-weight:600}
+.toast{font-size:13px;font-weight:650}
+@media(max-width:760px){
+  body{font-size:14px}
+  .shell{padding:16px 14px 24px}
+  .brand small{font-size:12px}
+  .intro-copy{font-size:13px}
+  .asof-label,.asof-time{font-size:11px}
+  .hero-main>p,.hero-main p{font-size:13px}
+  .hero-timing{font-size:11px}
+  .signal-card-head{font-size:12px}
+  .signal-card h2{font-size:22px}
+  .signal-card>p{font-size:12px}
+  .signal-live{font-size:10px}
+  .metric-card{min-height:116px;padding:13px}
+  .metric-top{font-size:11px}
+  .metric-value{font-size:21px}
+  .metric-card small{font-size:11px}
+  .chart-panel{padding:16px 14px 13px}
+  .panel-heading h3,.pool-stats-heading h3{font-size:15px}
+  .panel-heading p,.pool-stats-heading p{font-size:11px}
+  .segmented button{height:29px;padding:0 8px;font-size:11px}
+  .chart-method{font-size:11px}
+  .table-scroll table{font-size:11px}
+  th{font-size:10px}
+  td{padding:10px}
+  .table-foot{font-size:10px}
+  .method-card{padding:15px}
+  .method-card p{font-size:11px}
+  .detail-note{font-size:10px}
+  footer{font-size:9px}
+}
+@media(max-width:430px){
+  .metric-top{font-size:10px}
+  .metric-value{font-size:19px}
+  .metric-card small{font-size:10px}
+  .chart-date{font-size:9px}
+  .table-foot{font-size:9px}
+}

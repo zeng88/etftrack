@@ -16,6 +16,8 @@
   const shortDate = v => {const s=String(v||"").replaceAll("-","");return /^\d{8}$/.test(s)?`${Number(s.slice(4,6))}月${Number(s.slice(6,8))}日`:(v||"—");};
   const timeLabel = v => {if(!v)return "—";const s=String(v);if(/^\d{14}$/.test(s))return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)} ${s.slice(8,10)}:${s.slice(10,12)}`;if(s.endsWith("Z"))return new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(s));return s.replace("T"," ").slice(0,16);};
   const localClock = () => new Intl.DateTimeFormat("zh-CN",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false,timeZone:"Asia/Shanghai"}).format(new Date());
+  const shanghaiNow = () => new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).format(new Date());
+  const marketPhase = now => {const weekday=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Shanghai",weekday:"short"}).format(new Date()).toLowerCase();if(weekday==="sat"||weekday==="sun")return "offday";const hm=now.slice(11,16);if((hm>="09:30"&&hm<="11:30")||(hm>="13:00"&&hm<="15:00"))return "open";if(hm>"11:30"&&hm<"13:00")return "lunch";return hm>="15:00"?"closed":"preopen";};
   function toast(message,isError=false){const el=$("toast");el.textContent=message;el.className=`toast show${isError?" error":""}`;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className="toast",3800);}
   async function loadDashboard(){const [r,s]=await Promise.all([fetch("/api/dashboard",{cache:"no-store"}),fetch(`/api/pool-stats?days=${statsDays}`,{cache:"no-store"})]);if(!r.ok)throw new Error(`数据读取失败（${r.status}）`);dashboard=await r.json();if(!dashboard.etfs?.length)throw new Error(dashboard.error||"数据库中没有 ETF 快照");if(s.ok){const data=await s.json();poolStats=data.rows||[];}else poolStats=[];render();}
   function render(){renderStatus();renderSummary();renderPoolCharts();renderPoolStats();renderTable();}
@@ -56,22 +58,39 @@
   }
   function renderLiveFlow(){
     if(!liveFlow)return;
-    const stamp=String(liveFlow.time||"");
-    const clock=stamp.length>=12?`${stamp.slice(8,10)}:${stamp.slice(10,12)}`:localClock();
-    $("metric-active").textContent=`${signed(liveFlow.net_yi,1)} 亿`;
+    const stamp=String(liveFlow.time||""),now=shanghaiNow(),today=now.slice(0,10).replaceAll("-","");
+    const sourceDate=stamp.slice(0,8),sourceEpoch=/^\d{14}$/.test(stamp)?new Date(`${stamp.slice(0,4)}-${stamp.slice(4,6)}-${stamp.slice(6,8)}T${stamp.slice(8,10)}:${stamp.slice(10,12)}:${stamp.slice(12,14)}+08:00`).getTime():0;
+    const quoteAge=sourceEpoch?Math.max(0,Date.now()-sourceEpoch):Infinity,sameDay=sourceDate===today,phase=marketPhase(now),session=phase==="open",fresh=sameDay&&quoteAge<=120000;
+    const buy=Number(liveFlow.buy_yi)||0,sell=Number(liveFlow.sell_yi)||0,net=Number(liveFlow.net_yi)||buy-sell,amount=Number(liveFlow.amount_yi)||0;
+    const netShare=amount>0?Math.abs(net)/amount:0,dominance=netShare<0.03?"买卖力量接近":net>0?"估算主动买盘占优":"估算主动卖盘占优";
+    const phaseLabel={lunch:"午间快照",closed:"收盘快照",preopen:"盘前快照",offday:"非交易日快照"}[phase];
+    const timing=!sameDay?`最近行情 ${dateLabel(sourceDate)} ${timeLabel(stamp).slice(-5)}`:session?(fresh?`实时行情源 ${timeLabel(stamp).slice(-5)}`:`行情延迟 · 源时间 ${timeLabel(stamp).slice(-5)}`):`${phaseLabel} · 源时间 ${timeLabel(stamp).slice(-5)}`;
+    const delayed=session&&!fresh;
+    $("live-buy").textContent=`${number(buy,2)} 亿`;
+    $("live-sell").textContent=`${number(sell,2)} 亿`;
+    $("live-net").textContent=`${signed(net,2)} 亿`;
+    $("live-net").className=net>0?"buy-tone":net<0?"sell-tone":"";
+    $("live-source").textContent=timing;
+    $("signal-title").textContent=delayed?"行情延迟，保留上次估算":sameDay?(session?dominance:`${phaseLabel}：${dominance}`):"等待当日行情数据";
+    $("signal-copy").textContent=`核心池累计成交 ${number(amount,2)} 亿；买卖净差 ${signed(net,2)} 亿。此为全市场成交方向估算，不能确认国家队操作。`;
+    $("today-signal-meter").style.width=`${Math.min(100,Math.max(0,netShare*500))}%`;
+    $("metric-active").textContent=`${signed(net,1)} 亿`;
     $("metric-active").className=`metric-value ${tone(liveFlow.net_yi)}`;
-    $("metric-active-note").textContent=`内外盘成交方向估算 · ${liveFlow.core_count} 只重点 ETF`;
-    $("live-update-label").textContent="盘中主动买卖估算 · 每 20 秒刷新";
-    $("live-update-time").textContent=`${dateLabel(liveFlow.date)} ${clock}`;
+    $("metric-active-note").textContent=`买 ${number(buy,1)} 亿 · 卖 ${number(sell,1)} 亿 · ${liveFlow.core_count} 只重点 ETF`;
+    $("live-update-label").textContent="估算请求每 20 秒自动刷新";
+    $("live-update-time").textContent=`行情源 ${timeLabel(stamp)}`;
     $("refresh-status").classList.remove("offline");
-    $("refresh-status").querySelector("span").textContent=`行情 ${clock}`;
+    $("refresh-status").querySelector("span").textContent=`估算已更新 ${localClock()}`;
   }
+  let liveRefreshBusy=false;
   async function refreshLiveFlow(){
+    if(liveRefreshBusy)return;
+    liveRefreshBusy=true;
     try{
       const r=await fetch("/api/live-flow",{cache:"no-store"}),data=await r.json();
       if(!r.ok)throw new Error(data.error||"实时估算暂不可用");
       liveFlow=data;renderLiveFlow();
-    }catch(e){$("metric-active-note").textContent=`实时行情暂不可用 · ${localClock()}`;$("live-update-time").textContent="行情暂不可用";$("refresh-status").classList.add("offline");$("refresh-status").querySelector("span").textContent="实时行情连接失败";}
+    }catch(e){$("signal-title").textContent="实时估算暂不可用";$("signal-copy").textContent="行情接口未能返回完整的重点 ETF 报价；保留的数值属于上次成功采集，不能视为当前买卖。";$("metric-active-note").textContent=`实时行情暂不可用 · ${localClock()}`;$("live-update-time").textContent="本轮采集失败";$("live-source").textContent=liveFlow?.time?`上次成功行情源 ${timeLabel(liveFlow.time)}`:"尚无成功行情记录";$("refresh-status").classList.add("offline");$("refresh-status").querySelector("span").textContent="实时估算连接失败";}finally{liveRefreshBusy=false;}
   }
   function pointsFor(days){const all=dashboard.history?.pool||[];return days>0?all.slice(-days):all;}
   function svgAxis(w,h,left,right,top,bottom,values,format){const innerH=h-top-bottom;return values.map((v,i)=>{const y=top+i/(values.length-1)*innerH;return `<line class="grid-line" x1="${left}" y1="${y}" x2="${w-right}" y2="${y}"/><text class="axis-label" x="2" y="${y+3}">${format(v)}</text>`;}).join("");}
