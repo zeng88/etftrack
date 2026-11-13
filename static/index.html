@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7f5">
+  <meta name="description" content="汪汪队 ETF 份额变化与公开行情跟踪器">
+  <title>汪汪队ETF跟踪器</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="汪汪队ETF跟踪器首页">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M4 23.5 11 16l5 4 11-12"/><path d="M20 8h7v7"/><path d="M4 27h24"/></svg></span>
+        <span class="brand-copy"><b>汪汪队ETF跟踪器</b><small>宽基 ETF 成交额与资金动向 · 用来判断今日国家队是否上班</small></span>
+      </a>
+      <div class="top-actions">
+        <span id="connection" class="connection"><i></i><span>本地数据库</span></span>
+        <span id="refresh-status" class="refresh-status"><i></i><span>每 20 秒自动更新</span></span>
+        <button id="refresh" class="button button-primary"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.2 6.8A6.5 6.5 0 1 0 16.5 10M16.2 3.7v3.8h-3.8"/></svg><span>立即更新</span></button>
+      </div>
+    </header>
+
+    <main>
+      <section class="intro-row">
+        <div>
+          <div class="eyebrow"><span class="eyebrow-dot"></span> PUBLIC MARKET SIGNALS</div>
+          <h1>看份额变化，<span>跟踪资金方向。</span></h1>
+          <p class="intro-copy">聚焦与国家队历史持仓相关的宽基 ETF，用可验证的公开数据观察申赎与成交变化。</p>
+        </div>
+        <div class="asof-card">
+          <span class="asof-label">数据日期</span>
+          <strong id="asof-date">载入中</strong>
+          <span id="asof-time" class="asof-time">等待本地数据库</span>
+        </div>
+      </section>
+
+      <section class="hero-card" aria-labelledby="signal-title">
+        <div class="hero-main">
+          <div class="hero-kicker"><span id="market-state" class="state-pill">快照观察</span><span id="freshness">历史数据</span></div>
+          <h2 id="signal-title">正在读取数据…</h2>
+          <p id="signal-copy">本页是资金流观察工具，不是机构交易明细。</p>
+          <div class="hero-foot"><span class="micro-dot"></span><span id="source-line">数据源：腾讯行情 / 新浪 K 线</span></div>
+        </div>
+        <div class="hero-number">
+          <span id="hero-flow-label">重点观察池 · 估算净申赎</span>
+          <strong id="hero-flow">—</strong>
+          <small id="hero-flow-note">份额变化 × 价格</small>
+        </div>
+        <div class="hero-watermark" aria-hidden="true">F</div>
+      </section>
+
+      <section class="metric-grid" aria-label="重点指标">
+        <article class="metric-card">
+          <div class="metric-top"><span>成交额 / 20 日基线</span><span class="metric-icon icon-orange">↗</span></div>
+          <strong id="metric-ratio" class="metric-value">—</strong>
+          <small id="metric-ratio-note">同时点进度校正</small>
+          <div class="meter"><i id="ratio-meter"></i></div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-top"><span>重点池成交额</span><span class="metric-icon icon-blue">◫</span></div>
+          <strong id="metric-amount" class="metric-value">—</strong>
+          <small id="metric-avg">20 日均额 —</small>
+        </article>
+        <article class="metric-card">
+          <div class="metric-top"><span>规模加权涨跌</span><span class="metric-icon icon-red">⌁</span></div>
+          <strong id="metric-change" class="metric-value">—</strong>
+          <small>按当前 ETF 规模加权</small>
+        </article>
+        <article class="metric-card">
+          <div class="metric-top"><span>主动买卖估算</span><span class="metric-icon icon-green">⇄</span></div>
+          <strong id="metric-active" class="metric-value">—</strong>
+          <small id="metric-active-note">成交内外盘比例推算</small>
+        </article>
+      </section>
+
+      <section class="charts-grid pool-charts" aria-label="汪汪队整体份额估算">
+        <article class="panel chart-panel">
+          <div class="panel-heading">
+            <div><div class="section-label">CORE ETF POOL · DAILY CHANGE</div><h3>汪汪队每日份额变化估算</h3><p>20 只重点 ETF 合计 · 单位：亿份 · 正数净申购，负数净赎回</p></div>
+            <div class="segmented pool-range" role="group" aria-label="每日份额变化区间">
+              <button data-pool="flow" data-days="60" class="active">近3月</button><button data-pool="flow" data-days="120">近6月</button><button data-pool="flow" data-days="240">近1年</button>
+            </div>
+          </div>
+          <div class="pool-chart-summary"><strong id="flow-range-label">—</strong><span id="flow-latest-label">—</span></div>
+          <div id="flow-chart" class="chart-wrap pool-chart" role="group" aria-label="汪汪队重点 ETF 每日合计份额变化柱状图，点击柱子查看该日明细"></div>
+          <section id="flow-detail" class="flow-detail" hidden aria-live="polite">
+            <div class="flow-detail-head"><div><span>所选交易日</span><strong id="detail-date">—</strong></div><button id="detail-close" type="button">收起</button></div>
+            <div class="flow-detail-metrics">
+              <div><span>估算净申购份额</span><strong id="detail-buy" class="pos">—</strong></div>
+              <div><span>估算净赎回份额</span><strong id="detail-sell" class="neg">—</strong></div>
+              <div><span>ETF 二级市场成交量</span><strong id="detail-volume">—</strong></div>
+              <div><span>ETF 二级市场成交额</span><strong id="detail-amount">—</strong></div>
+            </div>
+            <div class="table-scroll detail-table-scroll"><table><thead><tr><th>重点 ETF</th><th class="right">份额净变化</th><th class="right">成交量</th><th class="right">成交额</th></tr></thead><tbody id="detail-rows"></tbody></table></div>
+            <p class="detail-note">份额净增加/减少是申购赎回方向估算；ETF 成交量是二级市场买卖双方撮合的总量，不能拆成国家队买入量和卖出量。</p>
+          </section>
+          <p class="chart-method"><b>估算方法：</b>重点 ETF 每日场内份额增减求和；正值表示份额净增加，负值表示净减少。份额公布频率与时点因交易所而异，缺少数据的日期不补造。份额变化也可能来自其他机构或个人投资者，本图不能确认国家队实际交易。</p>
+        </article>
+        <article class="panel chart-panel">
+          <div class="panel-heading">
+            <div><div class="section-label">CORE ETF POOL · NORMALIZED</div><h3>汪汪队加仓指数估算</h3><p>区间首日 = 100 · 高于 100 为估算净增加，低于 100 为估算净减少</p></div>
+            <div class="segmented pool-range" role="group" aria-label="加仓指数区间">
+              <button data-pool="index" data-days="60">近3月</button><button data-pool="index" data-days="120">近6月</button><button data-pool="index" data-days="240" class="active">近1年</button>
+            </div>
+          </div>
+          <div class="pool-chart-summary"><strong id="index-range-label">—</strong><span id="index-latest-label">—</span></div>
+          <div id="index-chart" class="chart-wrap pool-chart" role="img" aria-label="汪汪队重点 ETF 合计份额归一化指数曲线"></div>
+          <p class="chart-method"><b>估算方法：</b>当日重点池合计份额 ÷ 区间首日合计份额 × 100。它反映份额变化方向与幅度，不等于真实持仓比例；非交易日不产生点位，数据未更新日期会留空。</p>
+        </article>
+      </section>
+
+      <section class="panel pool-stats-panel">
+        <div class="panel-heading table-heading pool-stats-heading">
+          <div><div class="section-label">CORE ETF POOL · PERIOD STATISTICS</div><h3>汪汪队ETF合计份额变化统计</h3><p>份额变化 × 收盘价估算申赎金额；倍量对比前 20 日均额，历史缺失成交额按收盘价 × 成交量估算</p></div>
+          <div class="segmented stats-range" role="group" aria-label="统计表日期范围">
+            <button data-stats-days="20" class="active">1个月</button><button data-stats-days="60">3个月</button><button data-stats-days="120">6个月</button><button data-stats-days="240">1年</button>
+          </div>
+        </div>
+        <div class="table-scroll stats-table-scroll">
+          <table>
+            <thead><tr><th>日期</th><th>基金名称</th><th class="right">份额变化</th><th class="right">买入总金额估算</th><th class="right">赎回总金额估算</th><th class="right">成交倍量</th><th>变化信号</th></tr></thead>
+            <tbody id="pool-stats-rows"><tr><td colspan="7" class="empty-row">正在汇总汪汪队数据…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="table-foot"><span id="pool-stats-count">—</span><span>点击日期行查看逐只 ETF 的份额变化、成交量与成交额</span></div>
+      </section>
+
+      <section class="panel table-panel">
+        <div class="panel-heading table-heading">
+          <div><div class="section-label">ETF WATCHLIST</div><h3>观察名单</h3><p>重点持仓历史标签与扩展对照组分开显示</p></div>
+          <div class="table-tools">
+            <label class="search-box"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.8" cy="8.8" r="5.7"/><path d="m13 13 4 4"/></svg><input id="search" type="search" placeholder="搜索代码、名称或指数" autocomplete="off"></label>
+            <label class="sr-only" for="scope">名单范围</label>
+            <select id="scope" class="select-control"><option value="all">全部 ETF</option><option value="core">重点观察</option><option value="watch">扩展对照</option></select>
+            <label class="sr-only" for="sort">排序</label>
+            <select id="sort" class="select-control"><option value="flow">按申赎估算</option><option value="amount">按成交额</option><option value="ratio">按成交倍数</option><option value="change">按涨跌幅</option><option value="huijin">按历史持仓</option></select>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>ETF / 代码</th><th>跟踪指数</th><th>分类</th><th class="right">涨跌幅</th><th class="right">成交额</th><th class="right">较 20 日均</th><th class="right">份额申赎估算</th><th class="right">汇金历史持仓</th></tr></thead>
+            <tbody id="etf-rows"><tr><td colspan="8" class="empty-row">正在读取 SQLite 历史数据…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="table-foot"><span id="table-count">—</span><span>金额单位：亿元；份额估算区间见各行标注</span></div>
+      </section>
+
+      <section class="method-grid">
+        <article class="method-card method-main">
+          <div class="section-label">HOW TO READ</div>
+          <h3>信号来自公开数据，身份无法验证。</h3>
+          <p>份额增加可能代表 ETF 净申购，但无法说明是谁申购；成交内外盘估算会受做市、套利和机构换手影响。页面只展示观察线索，不声称确认国家队当天买卖。</p>
+        </article>
+        <article class="method-card">
+          <span class="method-index">01</span><h4>份额净申赎估算</h4><p>份额增减 × 当前价格。若采集间隔跨越多个交易日，会明确显示估算起点。</p>
+        </article>
+        <article class="method-card">
+          <span class="method-index">02</span><h4>历史持仓标签</h4><p>采用 2025 年报前十大持有人口径；它是历史标签，不代表汇金当前仍持有。</p>
+        </article>
+      </section>
+    </main>
+
+    <footer><span>ETF FLOW OBSERVER</span><span id="footer-source">本地 SQLite · 腾讯行情公开接口 · 新浪 K 线</span><span>仅供研究观察，不构成投资建议</span></footer>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

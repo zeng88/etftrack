@@ -1,0 +1,24 @@
+# Python runtime files
+__pycache__/
+*.py[cod]
+
+# Node dependencies and generated build output
+node_modules/
+dist/
+.dev.vars
+.dev.vars.*
+
+# Wrangler local D1 data and session state
+.wrangler/
+
+# Local SQLite database and transaction files
+data/*.sqlite3
+data/*.sqlite3-shm
+data/*.sqlite3-wal
+
+# Local runtime output
+server.log
+*.log
+
+# macOS Finder metadata
+.DS_Store
