@@ -57,7 +57,7 @@ export async function loadDashboard(db: D1Database) {
   const metaRows = await db.prepare("SELECT key,value FROM app_meta").all<{key:string;value:string}>();
   const meta = Object.fromEntries((metaRows.results ?? []).map(row => [row.key,row.value]));
   return {
-    generated_at: new Date().toISOString(), trade_date: latest,
+    runtime: "cloudflare", generated_at: new Date().toISOString(), trade_date: latest,
     source: meta.source || "腾讯行情公开接口；新浪 5 分钟 K 线",
     huijin_basis: meta.huijin_basis || "2025 年报历史披露口径，仅为历史标签",
     prev_share_date: meta.prev_share_date || null, latest_run,

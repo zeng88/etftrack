@@ -213,7 +213,7 @@ def load_dashboard(code: str = "510300", days: int = 30) -> dict[str, Any]:
         latest_run = _latest_run(conn)
         meta = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM app_meta")}
         return {
-            "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "runtime": "local", "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
             "trade_date": latest, "source": meta.get("source", "腾讯行情公开接口；新浪 5 分钟 K 线"),
             "huijin_basis": meta.get("huijin_basis", "2025 年报历史披露口径，仅为历史标签"),
             "prev_share_date": meta.get("prev_share_date"), "latest_run": latest_run,

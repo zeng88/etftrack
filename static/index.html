@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f5f7f5">
   <meta name="description" content="汪汪队 ETF 份额变化与公开行情跟踪器">
-  <link rel="icon" href="/dog-logo.svg" type="image/svg+xml">
+  <link rel="icon" href="/dog-logo.png" type="image/png">
   <title>汪汪队ETF跟踪器</title>
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/brand.css">
@@ -14,12 +14,12 @@
   <div class="shell">
     <header class="topbar">
       <a class="brand" href="/" aria-label="汪汪队ETF跟踪器首页">
-        <span class="brand-mark" aria-hidden="true"><img src="/dog-logo.svg" alt=""></span>
+        <span class="brand-mark" aria-hidden="true"><img src="/dog-logo.png" alt=""></span>
         <span class="brand-copy"><b>汪汪队ETF跟踪器</b><small>宽基 ETF 成交额与资金动向 · 用来判断今日国家队是否上班</small></span>
       </a>
       <div class="top-actions">
         <span id="connection" class="connection"><i></i><span>本地数据库</span></span>
-        <span id="refresh-status" class="refresh-status"><i></i><span>每 20 秒自动更新</span></span>
+        <span id="refresh-status" class="refresh-status"><i></i><span>盘中行情每 20 秒刷新</span></span>
         <button id="refresh" class="button button-primary"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.2 6.8A6.5 6.5 0 1 0 16.5 10M16.2 3.7v3.8h-3.8"/></svg><span>立即更新</span></button>
       </div>
     </header>
@@ -38,19 +38,23 @@
         </div>
       </section>
 
-      <section class="hero-card" aria-labelledby="signal-title">
+      <section class="hero-card" aria-labelledby="hero-title">
         <div class="hero-main">
-          <div class="hero-kicker"><span id="market-state" class="state-pill">快照观察</span><span id="freshness">历史数据</span></div>
-          <h2 id="signal-title">正在读取数据…</h2>
-          <p id="signal-copy">本页是资金流观察工具，不是机构交易明细。</p>
+          <div class="hero-kicker"><span id="market-state" class="state-pill">资金观察台</span><span id="freshness">正在读取数据…</span></div>
+          <h2 id="hero-title" class="hero-title">宽基 ETF，<span>国家队动向追踪</span></h2>
+          <p>以核心 ETF 池成交、份额变化和市值加权走势寻找资金活动迹象。估算信号不能确认具体买卖账户。</p>
           <div class="hero-foot"><span class="micro-dot"></span><span id="source-line">数据源：腾讯行情 / 新浪 K 线</span></div>
+          <div class="hero-timing"><span id="share-update-note">官方份额：工作日 23:15（北京时间）采集 · 未发布则下个交易日重试</span><span id="collection-last-run">等待采集状态</span><span id="share-data-date"></span></div>
         </div>
-        <div class="hero-number">
-          <span id="hero-flow-label">重点观察池 · 估算净申赎</span>
-          <strong id="hero-flow">—</strong>
-          <small id="hero-flow-note">份额变化 × 价格</small>
-        </div>
-        <div class="hero-watermark" aria-hidden="true">F</div>
+        <aside class="signal-card" aria-label="今日资金代理信号">
+          <div class="signal-card-head"><span>今日判断 · 代理信号</span><b id="signal-scope">CORE 20</b></div>
+          <h2 id="signal-title">正在读取市场信号…</h2>
+          <p id="signal-copy">信号由成交额与份额变化估算，不能识别交易账户。</p>
+          <div class="signal-meter"><i id="today-signal-meter"></i></div>
+          <div class="signal-card-foot"><span>观察范围</span><b id="scope-label">20 只宽基 · 4 只扩展</b></div>
+          <div class="signal-live"><span id="live-update-label">盘中行情每 20 秒刷新</span><span id="live-update-time">等待行情</span></div>
+        </aside>
+        <div class="hero-watermark" aria-hidden="true">ETF</div>
       </section>
 
       <section class="metric-grid" aria-label="重点指标">

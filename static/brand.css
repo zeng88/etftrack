@@ -1,2 +1,26 @@
 .brand-mark{overflow:hidden;padding:0;background:#13241a}
-.brand-mark img{display:block;width:100%;height:100%;object-fit:cover}
+.brand-mark img{display:block;width:100%;height:100%;object-fit:contain}
+
+.hero-card{grid-template-columns:minmax(0,1fr) minmax(340px,.58fr);gap:34px;min-height:250px;background:linear-gradient(118deg,#101f33 0%,#152b47 58%,#1b3659 100%)}
+.hero-main .hero-title{max-width:740px;margin:16px 0 12px;color:#f7f9fd;font-size:clamp(28px,3vw,39px);line-height:1.13;letter-spacing:-1.15px}
+.hero-main .hero-title span{display:block;color:#9dbbff}
+.hero-main>p{max-width:760px;color:#bdc9da;font-size:14px;line-height:1.85}
+.hero-foot{margin-top:17px}
+.hero-timing{display:flex;flex-wrap:wrap;gap:5px 18px;margin-top:12px;color:#aebdd0;font-size:10px;line-height:1.6}
+.hero-timing span:first-child{color:#d7e2f3}
+.signal-card{position:relative;z-index:1;padding:20px 22px 17px;border:1px solid rgba(194,211,237,.16);border-radius:17px;background:rgba(255,255,255,.045);box-shadow:inset 0 1px rgba(255,255,255,.035)}
+.signal-card-head,.signal-card-foot,.signal-live{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.signal-card-head{color:#aebdd0;font-size:11px;font-weight:600}
+.signal-card-head b{color:#7e93ae;font:700 10px var(--mono);letter-spacing:1.3px}
+.signal-card h2{margin:19px 0 5px;color:#f4f7fc;font-size:23px;line-height:1.3;letter-spacing:-.45px}
+.signal-card>p{min-height:42px;margin:0;color:#aebdd0;font-size:11px;line-height:1.7}
+.signal-meter{height:4px;margin:18px 0 11px;overflow:hidden;border-radius:5px;background:rgba(231,239,252,.13)}
+.signal-meter i{display:block;width:0;height:100%;border-radius:inherit;background:#9dbbff;transition:width .4s ease}
+.signal-card-foot{color:#9caec5;font-size:10px}
+.signal-card-foot b{color:#e0e8f5;font-size:10px;font-weight:600}
+.signal-live{margin-top:13px;padding-top:10px;border-top:1px solid rgba(223,233,249,.1);color:#aebdd0;font-size:9px}
+.signal-live span:last-child{font-family:var(--mono);white-space:nowrap}
+.hero-watermark{display:none}
+
+@media(max-width:900px){.hero-card{grid-template-columns:minmax(0,1fr) minmax(300px,.8fr);gap:20px}.signal-card{padding:17px}}
+@media(max-width:760px){.hero-card{grid-template-columns:1fr;gap:17px;min-height:0;padding:18px}.hero-main .hero-title{margin:12px 0 9px;font-size:27px}.hero-main>p{font-size:11px}.hero-timing{gap:4px 12px;font-size:9px}.signal-card{padding:15px}.signal-card h2{margin-top:13px;font-size:20px}.signal-card>p{min-height:0}.signal-meter{margin-top:13px}.signal-live{margin-top:10px}}
