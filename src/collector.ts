@@ -35,36 +35,56 @@ export async function fetchLiveFlow(db:D1Database){
 
 function shanghaiDate(time:number){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(time)).replaceAll("-","");}
 export async function collectConfirmedDaily(env:Env, timestamp:number){
-  const started=new Date(timestamp).toISOString(),date=shanghaiDate(timestamp),dateISO=`${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}`;
+  const started=new Date(timestamp).toISOString(),scheduledDate=shanghaiDate(timestamp);
   const {results:etfs=[]}=await env.DB.prepare("SELECT code,tcode,name,group_name FROM etfs ORDER BY code").all<{code:string;tcode:string;name:string;group_name:string}>();
-  const run=async(status:string,message:string)=>env.DB.prepare("INSERT INTO collection_runs(started_at,finished_at,status,trade_date,message,source) VALUES(?,?,?,?,?,?)").bind(started,new Date().toISOString(),status,date,message,"Cloudflare Worker Cron").run();
+  const run=async(status:string,message:string,date=scheduledDate)=>env.DB.prepare("INSERT INTO collection_runs(started_at,finished_at,status,trade_date,message,source) VALUES(?,?,?,?,?,?)").bind(started,new Date().toISOString(),status,date,message,"Cloudflare Worker Cron").run();
   try{
     const raw=await getText(QUOTE_URL+etfs.map(e=>e.tcode).join(","));const quotes=decodeTencent(raw);
     const core=etfs.filter(e=>e.group_name==="core");
-    if(core.some(e=>!quotes.has(e.code)||String(quotes.get(e.code)!.date)!==date))throw new Error("未获取到完整的当日核心 ETF 行情");
-    const official=new Map<string,{shares:number;source:string}>();
+    if(core.some(e=>!quotes.has(e.code)))throw new Error("未获取到完整的核心 ETF 行情");
+    const quoteDates=new Set(core.map(e=>String(quotes.get(e.code)!.date)));
+    if(quoteDates.size!==1)throw new Error("核心 ETF 行情日期不一致");
+    // A morning retry runs on the next calendar day while Tencent still reports
+    // the previous trading session. Use the quote's trading date for all rows.
+    const date=[...quoteDates][0],dateISO=`${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}`;
+    const complete=await env.DB.prepare(`SELECT s.trade_date FROM share_history s JOIN etfs e ON e.code=s.code
+      WHERE e.group_name='core' GROUP BY s.trade_date HAVING COUNT(DISTINCT s.code)=? ORDER BY s.trade_date DESC LIMIT 1`)
+      .bind(core.length).first<{trade_date:string}>();
+    const pending=await env.DB.prepare("SELECT DISTINCT trade_date FROM daily_snapshots WHERE trade_date>? ORDER BY trade_date DESC LIMIT 5")
+      .bind(complete?.trade_date||"00000000").all<{trade_date:string}>();
+    // Retry recent incomplete quote dates on every cron run; exchange reports
+    // can lag the close or be temporarily unavailable.
+    const retryDates=[...new Set([date,...(pending.results||[]).map(row=>row.trade_date)])].sort();
+    const officialByDate=new Map<string,Map<string,{shares:number;source:string}>>();
     const sh=core.filter(e=>e.tcode.startsWith("sh"));
-    if(sh.length){
-      const params=new URLSearchParams({sqlId:"COMMON_SSE_ZQPZ_ETFZL_XXPL_ETFGM_SEARCH_L",STAT_DATE:dateISO});
-      const body=JSON.parse(await getText(`https://query.sse.com.cn/commonQuery.do?${params}`,"https://www.sse.com.cn/"));
-      for(const item of body.result||[]){const code=String(item.SEC_CODE||"");if(item.TOT_VOL&&sh.some(e=>e.code===code))official.set(code,{shares:Number(String(item.TOT_VOL).replaceAll(",",""))*1e4,source:"上交所 ETF 规模披露"});}
+    const sz=core.filter(e=>e.tcode.startsWith("sz"));
+    for(const retryDate of retryDates){
+      const retryISO=`${retryDate.slice(0,4)}-${retryDate.slice(4,6)}-${retryDate.slice(6,8)}`;
+      const official=new Map<string,{shares:number;source:string}>();
+      if(sh.length){
+        const params=new URLSearchParams({sqlId:"COMMON_SSE_ZQPZ_ETFZL_XXPL_ETFGM_SEARCH_L",STAT_DATE:retryISO});
+        const body=JSON.parse(await getText(`https://query.sse.com.cn/commonQuery.do?${params}`,"https://www.sse.com.cn/"));
+        for(const item of body.result||[]){const code=String(item.SEC_CODE||"");if(item.TOT_VOL&&sh.some(e=>e.code===code))official.set(code,{shares:Number(String(item.TOT_VOL).replaceAll(",",""))*1e4,source:"上交所 ETF 规模披露"});}
+      }
+      for(const etf of sz){
+        const params=new URLSearchParams({SHOWTYPE:"JSON",CATALOGID:"scsj_fund_jjgm",TABKEY:"tab1",txtDm:etf.code,txtStart:retryISO,txtEnd:retryISO,jjlb:"ETF",tab1PAGENO:"1"});
+        const payload=JSON.parse(await getText(`https://www.szse.cn/api/report/ShowReport/data?${params}`,"https://www.szse.cn/market/fund/volume/etf/index.html"));
+        for(const row of payload?.[0]?.data||[]){const d=String(row.size_date||"").replaceAll("-","");const shares=Number(String(row.current_size||0).replaceAll(",",""))*1e4;if(d===retryDate&&shares>0)official.set(etf.code,{shares,source:"深交所 ETF 规模披露"});}
+      }
+      if(core.every(e=>official.has(e.code)))officialByDate.set(retryDate,official);
     }
-    for(const etf of core.filter(e=>e.tcode.startsWith("sz"))){
-      const params=new URLSearchParams({SHOWTYPE:"JSON",CATALOGID:"scsj_fund_jjgm",TABKEY:"tab1",txtDm:etf.code,txtStart:dateISO,txtEnd:dateISO,jjlb:"ETF",tab1PAGENO:"1"});
-      const payload=JSON.parse(await getText(`https://www.szse.cn/api/report/ShowReport/data?${params}`,"https://www.szse.cn/market/fund/volume/etf/index.html"));
-      for(const row of payload?.[0]?.data||[]){const d=String(row.size_date||"").replaceAll("-","");const shares=Number(String(row.current_size||0).replaceAll(",",""))*1e4;if(d===date&&shares>0)official.set(etf.code,{shares,source:"深交所 ETF 规模披露"});}
-    }
-    const full=core.every(e=>official.has(e.code));
+    const official=officialByDate.get(date)||new Map<string,{shares:number;source:string}>();
+    const full=officialByDate.has(date);
     const prevRows=await env.DB.prepare("SELECT code,shares FROM share_history WHERE trade_date=(SELECT MAX(trade_date) FROM share_history)").all<{code:string;shares:number}>();
     const previous=new Map((prevRows.results||[]).map(r=>[r.code,Number(r.shares)]));
     const stmts=[];
+    for(const [retryDate,rows] of officialByDate){for(const etf of core){const x=rows.get(etf.code)!;stmts.push(env.DB.prepare("INSERT OR REPLACE INTO share_history(trade_date,code,shares,observed_at,source) VALUES(?,?,?,?,?)").bind(retryDate,etf.code,x.shares,new Date().toISOString(),x.source));}}
     for(const etf of etfs){const q=quotes.get(etf.code);if(!q)continue;const old=previous.get(etf.code);const payload={...q,prev_shares:old??null,prev_share_date:null,day_progress:1};
       stmts.push(env.DB.prepare("INSERT OR REPLACE INTO daily_snapshots(trade_date,code,payload_json,source_ts,source) VALUES(?,?,?,?,?)").bind(date,etf.code,JSON.stringify(payload),String(q.ts),"腾讯公开行情"));
       stmts.push(env.DB.prepare("INSERT OR REPLACE INTO daily_activity(trade_date,code,amount_yi,volume_lots,shape_json,tail_ratio,complete) VALUES(?,?,?,?,?,?,?)").bind(date,etf.code,q.amount_yi,q.volume_lots,null,null,1));
-      if(full&&official.has(etf.code)){const x=official.get(etf.code)!;stmts.push(env.DB.prepare("INSERT OR REPLACE INTO share_history(trade_date,code,shares,observed_at,source) VALUES(?,?,?,?,?)").bind(date,etf.code,x.shares,new Date().toISOString(),x.source));}
     }
     for(let i=0;i<stmts.length;i+=80)await env.DB.batch(stmts.slice(i,i+80));
-    await run("success",full?`已采集 ${core.length} 只核心 ETF 行情与官方份额`:`已采集行情；官方份额未齐（${official.size}/${core.length}），保留上一完整确认日`);
+    await run("success",full?`已采集 ${core.length} 只核心 ETF 行情与官方份额`:`已采集行情；官方份额未齐（${official.size}/${core.length}），下次定时继续补采`,date);
     return {status:"success",trade_date:date,confirmed_shares:full,coverage:official.size,core_count:core.length};
   }catch(error){await run("failed",error instanceof Error?error.message:String(error));throw error;}
 }

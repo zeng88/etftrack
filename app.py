@@ -111,33 +111,42 @@ class Handler(BaseHTTPRequestHandler):
         self._json(result, 200 if result.get("status") != "failed" else 502)
 
 
-def _next_close_run(now: datetime) -> datetime:
-    target = now.replace(hour=23, minute=15, second=0, microsecond=0)
-    if target <= now:
-        target += timedelta(days=1)
-    while target.weekday() >= 5:
-        target += timedelta(days=1)
-    return target
+def _next_scheduled_run(now: datetime) -> tuple[datetime, str]:
+    """Find the next after-close collection or next-morning exchange retry."""
+    candidates: list[tuple[datetime, str]] = []
+    for offset in range(8):
+        day = (now + timedelta(days=offset)).date()
+        weekday = day.weekday()
+        if weekday <= 5:  # Monday-Saturday: retry prior session's official shares.
+            morning = datetime.combine(day, datetime.min.time(), TZ).replace(hour=8, minute=30)
+            if morning > now:
+                candidates.append((morning, "次日份额补采"))
+        if weekday <= 4:  # Monday-Friday: capture the current session after close.
+            close = datetime.combine(day, datetime.min.time(), TZ).replace(hour=23, minute=15)
+            if close > now:
+                candidates.append((close, "收盘行情采集"))
+    return min(candidates, key=lambda item: item[0])
 
 
 def _scheduler() -> None:
     while True:
         now = datetime.now(TZ)
-        target = _next_close_run(now)
+        target, task_name = _next_scheduled_run(now)
         wait_seconds = max(1, (target - now).total_seconds())
-        print(f"本地自动更新已安排：{target.strftime('%Y-%m-%d %H:%M')} Asia/Shanghai")
+        print(f"本地自动更新已安排：{target.strftime('%Y-%m-%d %H:%M')} Asia/Shanghai · {task_name}")
         time.sleep(wait_seconds)
         result = update_once()
-        print(f"定时更新：{result.get('status')} · {result.get('message')}")
+        print(f"{task_name}：{result.get('status')} · {result.get('message')}")
 
 
 def main() -> None:
     seeded = initialize_db()
     print("SQLite 初始化完成" + ("，已导入参考历史" if seeded else "，沿用现有数据库"))
     threading.Thread(target=_scheduler, name="etf-close-scheduler", daemon=True).start()
+    threading.Thread(target=update_once, name="startup-data-refresh", daemon=True).start()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"汪汪队ETF跟踪器：http://{HOST}:{PORT}")
-    print("本地服务运行期间会在交易日 23:15（北京时间）尝试更新；按 Ctrl+C 停止。")
+    print("本地服务运行期间会在交易日收盘后 23:15 更新，并于次日 08:30 补采交易所份额；按 Ctrl+C 停止。")
     try:
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:

@@ -402,11 +402,16 @@ def update_once(path: str | None = None) -> dict[str, Any]:
         # Fill the gap since the last saved close from the exchanges' published share data.
         # A bootstrap snapshot is only a reference sample, so include its date in the first
         # official backfill instead of treating it as a verified share-history baseline.
-        if latest and latest < trade_date:
+        # Exchange share figures may publish after the close. Retry the latest
+        # quote date when its share row is still only the intraday Tencent value.
+        # This also lets the next-morning scheduled run complete yesterday's data.
+        if latest and (latest < trade_date or pending_quote_date):
             from datetime import date, timedelta
             latest_day = date.fromisoformat(f"{latest[:4]}-{latest[4:6]}-{latest[6:8]}")
             start_day = latest_day if pending_quote_date else latest_day + timedelta(days=1)
-            end_day = date.fromisoformat(f"{trade_date[:4]}-{trade_date[4:6]}-{trade_date[6:8]}") - timedelta(days=1)
+            end_day = date.fromisoformat(f"{trade_date[:4]}-{trade_date[4:6]}-{trade_date[6:8]}")
+            if not pending_quote_date:
+                end_day -= timedelta(days=1)
             if reference_date and reference_date < trade_date:
                 reference_day = date.fromisoformat(f"{reference_date[:4]}-{reference_date[4:6]}-{reference_date[6:8]}")
                 if reference_day <= end_day:
