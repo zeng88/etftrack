@@ -237,7 +237,7 @@ def load_flow_detail(trade_date: str) -> dict[str, Any]:
     try:
         rows = conn.execute(
             """SELECT e.code,e.name,h.shares,prev.shares AS prev_shares,
-                      a.amount_yi,a.volume_lots,h.source,c.close_price
+                      a.amount_yi,a.volume_lots,h.source,c.close_price,snap.payload_json AS snapshot_payload
                FROM etfs e
                JOIN share_history h ON h.code=e.code AND h.trade_date=?
                LEFT JOIN share_history prev ON prev.code=e.code AND prev.trade_date=(
@@ -246,6 +246,7 @@ def load_flow_detail(trade_date: str) -> dict[str, Any]:
                )
                LEFT JOIN daily_activity a ON a.code=e.code AND a.trade_date=h.trade_date
                LEFT JOIN daily_closes c ON c.code=e.code AND c.trade_date=h.trade_date
+               LEFT JOIN daily_snapshots snap ON snap.code=e.code AND snap.trade_date=h.trade_date
                WHERE e.group_name='core' ORDER BY e.code""", (trade_date,)
         ).fetchall()
         if any(row["source"] == "腾讯行情份额字段" for row in rows):
@@ -269,7 +270,13 @@ def load_flow_detail(trade_date: str) -> dict[str, Any]:
             delta_yi = None if row["prev_shares"] is None else (float(row["shares"]) - float(row["prev_shares"])) / 1e8
             volume_yi = None if row["volume_lots"] is None else float(row["volume_lots"]) * 100 / 1e8
             amount_yi = None if row["amount_yi"] is None else float(row["amount_yi"])
-            estimated_amount_yi = delta_yi * float(row["close_price"]) if delta_yi is not None and row["close_price"] is not None else None
+            close_price = float(row["close_price"]) if row["close_price"] is not None else None
+            if close_price is None and row["snapshot_payload"]:
+                try:
+                    close_price = float(json.loads(row["snapshot_payload"]).get("price") or 0) or None
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    close_price = None
+            estimated_amount_yi = delta_yi * close_price if delta_yi is not None and close_price is not None else None
             if delta_yi is not None:
                 if delta_yi > 0:
                     total_buy_yi += delta_yi

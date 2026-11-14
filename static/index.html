@@ -38,13 +38,13 @@
           <div class="hero-timing"><span id="share-update-note">收盘后 23:15 采行情；次日 08:30 补采交易所份额，未披露则后续继续重试</span><span id="collection-last-run">等待采集状态</span><span id="share-data-date"></span></div>
         </div>
         <aside class="signal-card" aria-label="今日资金代理信号">
-          <div class="signal-card-head"><span>今日判断 · 资金动向估算</span><b id="signal-scope">重点池 20 只</b></div>
+          <div class="signal-card-head"><span>盘口买卖估算 · 实时/最近交易日</span><b id="signal-scope">重点池 20 只</b></div>
           <h2 id="signal-title">正在读取实时买卖估算…</h2>
           <p id="signal-copy">每 20 秒重取公开行情，估算主动买卖方向；不能识别国家队账户。</p>
-          <div class="live-estimates" aria-label="重点 ETF 主动买卖估算">
-            <div><span>估算主动买入</span><b id="live-buy">—</b></div>
-            <div><span>估算主动卖出</span><b id="live-sell">—</b></div>
-            <div><span>估算净方向</span><b id="live-net">—</b></div>
+          <div class="live-estimates" aria-label="重点 ETF 盘口买卖方向估算">
+            <div><span>盘口估算主动买入</span><b id="live-buy">—</b></div>
+            <div><span>盘口估算主动卖出</span><b id="live-sell">—</b></div>
+            <div><span>盘口估算净方向</span><b id="live-net">—</b></div>
           </div>
           <div class="signal-meter"><i id="today-signal-meter"></i></div>
           <div class="signal-card-foot"><span id="scope-label">20 只宽基 · 4 只扩展</span><b id="live-source">行情源时间等待中</b></div>
@@ -100,7 +100,7 @@
             </div>
             <div class="flow-detail-toolbar"><span id="detail-sort-note">逐只 ETF 按当日净申购/净赎回金额排序</span></div>
             <div class="table-scroll detail-table-scroll"><table><thead><tr><th>重点 ETF</th><th class="right">份额净变化（亿份）</th><th class="right">估算净申购（亿元）</th><th class="right">估算净赎回（亿元）</th><th class="right">成交量（亿份）</th><th class="right">成交额（亿元）</th></tr></thead><tbody id="detail-rows"></tbody></table></div>
-            <p class="detail-note">申购/赎回金额按份额变化 × 当日收盘价估算，只代表 ETF 份额变化，不能确认国家队账户或真实成交。二级市场成交额是买卖双方撮合总额，不能拆分为国家队买入和卖出。</p>
+            <p class="detail-note">申购/赎回金额按份额变化 × 当日价格估算；当日收盘价缺档时使用该日行情快照价格补算。这里统计 ETF 份额变化，下方首页盘口估算统计二级市场主动买卖方向，两者口径不同，均不能确认国家队账户或真实成交。</p>
           </section>
           <p class="chart-method"><b>估算方法：</b>重点 ETF 每日场内份额增减求和；正值表示份额净增加，负值表示净减少。份额公布频率与时点因交易所而异，缺少数据的日期不补造。份额变化也可能来自其他机构或个人投资者，本图不能确认国家队实际交易。</p>
         </article>

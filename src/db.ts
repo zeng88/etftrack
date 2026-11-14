@@ -68,12 +68,13 @@ export async function loadDashboard(db: D1Database) {
 
 export async function loadFlowDetail(db: D1Database, date: string) {
   const {results=[]} = await db.prepare(`
-    SELECT e.code,e.name,h.shares,prev.shares AS prev_shares,a.amount_yi,a.volume_lots,h.source,c.close_price
+    SELECT e.code,e.name,h.shares,prev.shares AS prev_shares,a.amount_yi,a.volume_lots,h.source,c.close_price,snap.payload_json AS snapshot_payload
     FROM etfs e JOIN share_history h ON h.code=e.code AND h.trade_date=?
     LEFT JOIN share_history prev ON prev.code=e.code AND prev.trade_date=(
       SELECT MAX(p.trade_date) FROM share_history p WHERE p.code=e.code AND p.trade_date<h.trade_date)
     LEFT JOIN daily_activity a ON a.code=e.code AND a.trade_date=h.trade_date
     LEFT JOIN daily_closes c ON c.code=e.code AND c.trade_date=h.trade_date
+    LEFT JOIN daily_snapshots snap ON snap.code=e.code AND snap.trade_date=h.trade_date
     WHERE e.group_name='core' ORDER BY e.code
   `).bind(date).all<Record<string,unknown>>();
   if (results.some(row=>row.source==="腾讯行情份额字段")) return {date,core_count:results.length,items:[],buy_yi:0,sell_yi:0,net_yi:0,volume_yi:null,amount_yi:null,volume_coverage:0,amount_coverage:0};
@@ -83,7 +84,9 @@ export async function loadFlowDetail(db: D1Database, date: string) {
     const delta=row.prev_shares==null?null:(Number(row.shares)-Number(row.prev_shares))/1e8;
     const volume_yi=row.volume_lots==null?null:Number(row.volume_lots)*100/1e8;
     const amount_yi=row.amount_yi==null?null:Number(row.amount_yi);
-    const estimated_amount_yi=delta!==null&&row.close_price!=null?delta*Number(row.close_price):null;
+    let close_price=row.close_price==null?null:Number(row.close_price);
+    if(close_price==null&&typeof row.snapshot_payload==="string")try{const payload=JSON.parse(row.snapshot_payload) as Record<string,unknown>;close_price=Number(payload.price)||null;}catch{}
+    const estimated_amount_yi=delta!==null&&close_price!==null?delta*close_price:null;
     if(delta!==null){if(delta>0){buy+=delta;buy_count++;if(estimated_amount_yi!==null){buy_amount+=estimated_amount_yi;buy_amount_coverage++;}}else if(delta<0){sell+=Math.abs(delta);sell_count++;if(estimated_amount_yi!==null){sell_amount+=Math.abs(estimated_amount_yi);sell_amount_coverage++;}}}
     if(volume_yi!==null){volume+=volume_yi;volume_coverage++;}
     if(amount_yi!==null){amount+=amount_yi;amount_coverage++;}

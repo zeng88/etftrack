@@ -72,8 +72,9 @@
     $("live-net").textContent=`${signed(net,2)} 亿`;
     $("live-net").className=net>0?"buy-tone":net<0?"sell-tone":"";
     $("live-source").textContent=timing;
-    $("signal-title").textContent=delayed?"行情延迟，保留上次估算":sameDay?(session?dominance:`${phaseLabel}：${dominance}`):"等待当日行情数据";
-    $("signal-copy").textContent=`核心池累计成交 ${number(amount,2)} 亿；买卖净差 ${signed(net,2)} 亿。此为全市场成交方向估算，不能确认国家队操作。`;
+    $("signal-title").textContent=delayed?"行情延迟，保留上次估算":session?(fresh?dominance:"盘中行情暂未刷新"):sameDay?`${phaseLabel}：${dominance}`:"最近交易日盘口估算";
+    const period=sameDay?"当日":"最近交易日";
+    $("signal-copy").textContent=`${period}核心池成交 ${number(amount,2)} 亿，盘口主动买卖净差 ${signed(net,2)} 亿。此值按内外盘成交方向估算；下方历史金额按份额变化 × 价格计算，口径不同，均不能确认国家队账户。`;
     $("today-signal-meter").style.width=`${Math.min(100,Math.max(0,netShare*500))}%`;
     $("metric-active").textContent=`${signed(net,1)} 亿`;
     $("metric-active").className=`metric-value ${tone(liveFlow.net_yi)}`;
