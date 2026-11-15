@@ -72,6 +72,7 @@
     const phaseLabel={lunch:"午间快照",closed:"收盘快照",preopen:"盘前快照",offday:"非交易日快照"}[phase];
     const timing=!sameDay?`最近行情 ${dateLabel(sourceDate)} ${timeLabel(stamp).slice(-5)}`:session?(fresh?`实时行情源 ${timeLabel(stamp).slice(-5)}`:`行情延迟 · 源时间 ${timeLabel(stamp).slice(-5)}`):`${phaseLabel} · 源时间 ${timeLabel(stamp).slice(-5)}`;
     const delayed=session&&!fresh;
+    $("signal-label").textContent=`${sameDay?"今日判断":"最近交易日判断"} · 国家队是否上班（估算）`;
     $("live-buy").textContent=`${number(buy,2)} 亿`;
     $("live-sell").textContent=`${number(sell,2)} 亿`;
     $("live-net").textContent=`${signed(net,2)} 亿`;
