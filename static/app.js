@@ -31,14 +31,17 @@
     $("footer-source").textContent="公开行情 · 交易所份额披露";
     const conn=$("connection"),state=$("market-state"),fresh=$("freshness");
     const workerRun=run?.source==="Cloudflare Worker Cron";
-    const failed=run?.status==="failed"&&(!cloud||workerRun);
+    const failedRun=run?.status==="failed"&&(!cloud||workerRun);
+    const runWeekday=run?.started_at?new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Shanghai",weekday:"short"}).format(new Date(run.started_at)).toLowerCase():"";
+    const offdayFailure=Boolean(failedRun&&cloud&&(runWeekday==="sat"||runWeekday==="sun"));
+    const failed=Boolean(failedRun&&!offdayFailure);
     conn.classList.toggle("offline",Boolean(failed));
-    conn.querySelector("span").textContent=failed?"行情采集异常":"行情服务正常";
-    state.textContent=failed?"最近一次采集失败":"资金观察台";
-    fresh.textContent=failed?"仍显示最近完整确认数据":cloud?"盘中行情每 20 秒刷新":run?.finished_at?`最近采集 ${timeLabel(run.finished_at)}`:"等待首次采集";
+    conn.querySelector("span").textContent=failed?"定时行情采集失败":offdayFailure?"非交易日补采超时":"行情服务正常";
+    state.textContent=failed||offdayFailure?"保留最近有效数据":"资金观察台";
+    fresh.textContent=failed?"定时采集未完成，仍显示最近完整数据":offdayFailure?"非交易日任务超时，不影响最近交易日行情":cloud?"盘中行情每 20 秒刷新":run?.finished_at?`最近采集 ${timeLabel(run.finished_at)}`:"等待首次采集";
     if(cloud&&!workerRun){$("collection-last-run").textContent="等待首次收盘采集";}
     else if(run){
-      const label=run.status==="failed"?"采集失败":run.message?.includes("官方份额未齐")?"行情已更新，官方份额待发布":"采集成功";
+      const label=run.status==="failed"?(offdayFailure?"非交易日补采超时，保留有效数据":"定时采集失败"):run.message?.includes("官方份额未齐")?"行情已更新，官方份额待补":"采集成功";
       $("collection-last-run").textContent=`${label} · ${timeLabel(run.finished_at)}`;
     }else $("collection-last-run").textContent="尚无采集记录";
     const confirmed=(dashboard.history?.pool||[]).filter(row=>row.delta_yi!=null).at(-1)?.date;
@@ -63,7 +66,9 @@
     const sourceDate=stamp.slice(0,8),sourceEpoch=/^\d{14}$/.test(stamp)?new Date(`${stamp.slice(0,4)}-${stamp.slice(4,6)}-${stamp.slice(6,8)}T${stamp.slice(8,10)}:${stamp.slice(10,12)}:${stamp.slice(12,14)}+08:00`).getTime():0;
     const quoteAge=sourceEpoch?Math.max(0,Date.now()-sourceEpoch):Infinity,sameDay=sourceDate===today,phase=marketPhase(now),session=phase==="open",fresh=sameDay&&quoteAge<=120000;
     const buy=Number(liveFlow.buy_yi)||0,sell=Number(liveFlow.sell_yi)||0,net=Number(liveFlow.net_yi)||buy-sell,amount=Number(liveFlow.amount_yi)||0;
-    const netShare=amount>0?Math.abs(net)/amount:0,dominance=netShare<0.03?"买卖力量接近":net>0?"估算主动买盘占优":"估算主动卖盘占优";
+    const netShare=amount>0?Math.abs(net)/amount:0;
+    const dominance=netShare<0.03?"买卖接近，暂看不出明显护盘":net>0?"买入占优，可能有护盘迹象":"卖出占优，暂未见明显护盘";
+    const netText=net>0?`净买入 ${number(net,2)} 亿`:net<0?`净卖出 ${number(Math.abs(net),2)} 亿`:"买卖大致持平";
     const phaseLabel={lunch:"午间快照",closed:"收盘快照",preopen:"盘前快照",offday:"非交易日快照"}[phase];
     const timing=!sameDay?`最近行情 ${dateLabel(sourceDate)} ${timeLabel(stamp).slice(-5)}`:session?(fresh?`实时行情源 ${timeLabel(stamp).slice(-5)}`:`行情延迟 · 源时间 ${timeLabel(stamp).slice(-5)}`):`${phaseLabel} · 源时间 ${timeLabel(stamp).slice(-5)}`;
     const delayed=session&&!fresh;
@@ -72,9 +77,9 @@
     $("live-net").textContent=`${signed(net,2)} 亿`;
     $("live-net").className=net>0?"buy-tone":net<0?"sell-tone":"";
     $("live-source").textContent=timing;
-    $("signal-title").textContent=delayed?"行情延迟，保留上次估算":session?(fresh?dominance:"盘中行情暂未刷新"):sameDay?`${phaseLabel}：${dominance}`:"最近交易日盘口估算";
+    $("signal-title").textContent=delayed?"盘中行情延迟，保留上次估算":session?(fresh?dominance:"盘中行情暂未刷新"):sameDay?`${phaseLabel} · ${dominance}`:`最近交易日 · ${dominance}`;
     const period=sameDay?"当日":"最近交易日";
-    $("signal-copy").textContent=`${period}核心池成交 ${number(amount,2)} 亿，盘口主动买卖净差 ${signed(net,2)} 亿。此值按内外盘成交方向估算；下方历史金额按份额变化 × 价格计算，口径不同，均不能确认国家队账户。`;
+    $("signal-copy").textContent=`${period}核心宽基 ETF 成交 ${number(amount,2)} 亿，${netText}。按成交方向推测是否有护盘买盘，无法确认国家队账户；下方历史金额按份额变化 × 价格计算，口径不同。`;
     $("today-signal-meter").style.width=`${Math.min(100,Math.max(0,netShare*500))}%`;
     $("metric-active").textContent=`${signed(net,1)} 亿`;
     $("metric-active").className=`metric-value ${tone(liveFlow.net_yi)}`;
