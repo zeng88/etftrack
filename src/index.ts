@@ -11,10 +11,10 @@ async function cachedRead(request:Request,env:Env,make:()=>Promise<unknown>){
   const response=Response.json(await make(),{headers:{"Cache-Control":"public, max-age=300"}});
   await cache.put(key,response.clone());return response;
 }
-async function cachedLiveFlow(request:Request,env:Env){
+async function cachedLiveFlow(request:Request){
   const url=new URL(request.url),key=new Request(`${url.origin}/__live_flow_cache/v1`),cache=caches.default;
   const hit=await cache.match(key);if(hit)return hit;
-  const response=Response.json(await fetchLiveFlow(env.DB),{headers:{"Cache-Control":"public, max-age=12"}});
+  const response=Response.json(await fetchLiveFlow(),{headers:{"Cache-Control":"public, max-age=12"}});
   await cache.put(key,response.clone());return response;
 }
 
@@ -33,9 +33,9 @@ export default {
         const date=url.searchParams.get("date")||"";if(!/^\d{8}$/.test(date))return json({error:"日期格式应为 YYYYMMDD"},400);
         const detail=await loadFlowDetail(env.DB,date);if(!detail.items.length)return json({error:"所选日期没有份额明细"},404);return json(detail);
       }
-      if(url.pathname==="/api/live-flow"&&request.method==="GET")return cachedLiveFlow(request,env);
+      if(url.pathname==="/api/live-flow"&&request.method==="GET")return cachedLiveFlow(request);
       if(url.pathname==="/api/update"&&request.method==="POST"){
-        const cached=await cachedLiveFlow(request,env),flow=await cached.json();return json({status:"success",message:`实时估算已更新 · ${flow.time}`,live_flow:flow});
+        const cached=await cachedLiveFlow(request),flow=await cached.json();return json({status:"success",message:`实时估算已更新 · ${flow.time}`,live_flow:flow});
       }
       if (url.pathname.startsWith("/api/")) return json({error:"Not found"},404);
       return env.ASSETS.fetch(request);

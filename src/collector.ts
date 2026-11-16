@@ -1,8 +1,8 @@
 import type { Env } from "./db";
+import { LIVE_ETFS } from "./etf-list.ts";
 
 const QUOTE_URL = "https://qt.gtimg.cn/q=";
 const USER_AGENT = "Mozilla/5.0 (compatible; etftrack/1.0)";
-const ETF_LIST_CACHE_KEY = "https://etftrack-internal/cache/etf-list-v1";
 
 export function shareRetryDates(tradeDate:string,currentAlreadyComplete:boolean,pendingDates:string[]){
   const unique=[...new Set(pendingDates)].filter(Boolean).filter(date=>date!==tradeDate).sort();
@@ -15,14 +15,6 @@ export function shareRetryDates(tradeDate:string,currentAlreadyComplete:boolean,
 export function missingEtfsForDate<T extends {code:string}>(etfs:T[],existingRows:{code:string}[]){
   const existing=new Set(existingRows.map(row=>row.code));
   return etfs.filter(etf=>!existing.has(etf.code));
-}
-
-async function loadEtfList(db:D1Database){
-  const cache=caches.default,key=new Request(ETF_LIST_CACHE_KEY),hit=await cache.match(key);
-  if(hit)return await hit.json() as {code:string;tcode:string;name:string;group_name:string}[];
-  const {results=[]}=await db.prepare("SELECT code,tcode,name,group_name FROM etfs ORDER BY code").all<{code:string;tcode:string;name:string;group_name:string}>();
-  await cache.put(key,Response.json(results,{headers:{"Cache-Control":"public, max-age=3600"}}));
-  return results;
 }
 
 function num(fields: string[], index: number): number {
@@ -43,8 +35,8 @@ async function getText(url:string,referer="",timeoutMs=18000){
   if(!response.ok)throw new Error(`行情源 HTTP ${response.status}`);return response.text();
 }
 
-export async function fetchLiveFlow(db:D1Database){
-  const results=await loadEtfList(db);
+export async function fetchLiveFlow(){
+  const results=LIVE_ETFS;
   if(!results.length)throw new Error("重点 ETF 名单为空");
   const raw=await getText(QUOTE_URL+results.map(r=>r.tcode).join(","));
   const quotes=decodeTencent(raw);
