@@ -9,6 +9,17 @@
 - 本地服务运行期间会按工作日北京时间 23:15 尝试更新；页面盘中行情约每 20 秒刷新。关闭服务后本机不再定时采集。
 - SQLite schema 由 `migrations/*.sql` 版本化；Python 服务启动时自动应用未执行迁移。也可以手动运行 `npm run db:migrate:local`。
 
+### 补齐 34 只跟踪 ETF 的近一年历史
+
+应用数据库迁移后，首次联网从参考网页公开的份额缓存、交易所份额披露和新浪日 K 线补齐新增标的：
+
+```sh
+npm run db:migrate:local
+npm run db:backfill:reference
+```
+
+回填日期默认是近 365 天至昨天，也可以用 `--start YYYY-MM-DD --end YYYY-MM-DD` 指定区间。日常更新和盘中估算会按数据库中的 `core` 名单动态采集；34 只参考篮子全部属于核心名单，`159339` 仍作为额外观察项。若使用 Cloudflare，先完成本地回填，再按下方“Cloudflare Worker + D1”步骤导出并合并本地历史。
+
 ## Cloudflare Worker + D1
 
 Wrangler 的 Workerd 本地运行时要求 macOS 13.5+；本机 macOS 12 不支持 `npm run dev:worker`。该命令可在较新 macOS 或满足 glibc 2.35 的 Linux 容器运行。部署与远程 D1 管理不依赖本地 Workerd。

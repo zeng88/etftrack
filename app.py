@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
 from collector import fetch_live_flow, update_once
-from storage import ROOT, initialize_db, load_dashboard, load_flow_detail, load_pool_statistics
+from storage import ROOT, initialize_db, load_dashboard, load_flow_detail, load_pool_statistics, load_flow_overview
 
 TZ = ZoneInfo("Asia/Shanghai")
 STATIC_DIR = ROOT / "static"
@@ -76,6 +76,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"days": days, "rows": load_pool_statistics(days)})
             except Exception as exc:
                 self._json({"error": f"读取汪汪队统计数据失败：{type(exc).__name__}: {exc}"}, 500)
+            return
+        if parsed.path == "/api/flow-overview":
+            try:
+                self._json(load_flow_overview())
+            except Exception as exc:
+                self._json({"error": f"读取资金动向看板失败：{type(exc).__name__}: {exc}"}, 500)
             return
         if parsed.path == "/api/health":
             self._json({"ok": True, "time": datetime.now(TZ).isoformat(timespec="seconds")})

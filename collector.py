@@ -145,34 +145,44 @@ def backfill_exchange_shares(etfs: list[dict[str, Any]], start: str, end: str) -
         day = date.fromisoformat(start)
         last = date.fromisoformat(end)
         while day <= last:
-            params = urlencode({"sqlId": "COMMON_SSE_ZQPZ_ETFZL_XXPL_ETFGM_SEARCH_L", "STAT_DATE": day.isoformat()})
-            try:
-                payload = json.loads(_https_get(f"https://query.sse.com.cn/commonQuery.do?{params}", "https://www.sse.com.cn/").decode("utf-8", errors="replace"))
-                wanted = {item["code"] for item in sh_items}
-                for item in payload.get("result") or []:
-                    code = str(item.get("SEC_CODE") or "")
-                    if code in wanted and item.get("TOT_VOL") not in (None, ""):
-                        rows.append((day.strftime("%Y%m%d"), code, float(str(item["TOT_VOL"]).replace(",", "")) * 1e4, "上交所 ETF 规模披露"))
-            except Exception as exc:
-                errors.append(f"上交所 {day.isoformat()}: {type(exc).__name__}")
+            if day.weekday() < 5:
+                params = urlencode({"sqlId": "COMMON_SSE_ZQPZ_ETFZL_XXPL_ETFGM_SEARCH_L", "STAT_DATE": day.isoformat()})
+                try:
+                    payload = json.loads(_https_get(f"https://query.sse.com.cn/commonQuery.do?{params}", "https://www.sse.com.cn/").decode("utf-8", errors="replace"))
+                    wanted = {item["code"] for item in sh_items}
+                    for item in payload.get("result") or []:
+                        code = str(item.get("SEC_CODE") or "")
+                        if code in wanted and item.get("TOT_VOL") not in (None, ""):
+                            rows.append((day.strftime("%Y%m%d"), code, float(str(item["TOT_VOL"]).replace(",", "")) * 1e4, "上交所 ETF 规模披露"))
+                except Exception as exc:
+                    errors.append(f"上交所 {day.isoformat()}: {type(exc).__name__}")
             day += timedelta(days=1)
 
     sz_items = [item for item in etfs if item["tcode"].startswith("sz")]
     for item in sz_items:
-        params = urlencode({"SHOWTYPE": "JSON", "CATALOGID": "scsj_fund_jjgm", "TABKEY": "tab1",
-                            "txtDm": item["code"], "txtStart": start, "txtEnd": end,
-                            "jjlb": "ETF", "tab1PAGENO": 1})
-        try:
-            payload = json.loads(_https_get(f"https://www.szse.cn/api/report/ShowReport/data?{params}",
-                                            "https://www.szse.cn/market/fund/volume/etf/index.html").decode("utf-8", errors="replace"))
-            block = payload[0] if isinstance(payload, list) and payload else {}
-            for item_row in block.get("data") or []:
-                date = str(item_row.get("size_date") or "").replace("-", "")
-                shares = float(str(item_row.get("current_size") or "0").replace(",", "")) * 1e4
-                if len(date) == 8 and shares > 0:
-                    rows.append((date, item["code"], shares, "深交所 ETF 规模披露"))
-        except Exception as exc:
-            errors.append(f"深交所 {item['code']}: {type(exc).__name__}")
+        from datetime import date, timedelta
+        range_start = date.fromisoformat(start)
+        range_end = date.fromisoformat(end)
+        # SZSE's public form validates each query to a maximum six-month range.
+        while range_start <= range_end:
+            range_stop = min(range_start + timedelta(days=179), range_end)
+            params = urlencode({"SHOWTYPE": "JSON", "CATALOGID": "scsj_fund_jjgm", "TABKEY": "tab1",
+                                "txtDm": item["code"], "txtStart": range_start.isoformat(),
+                                "txtEnd": range_stop.isoformat(), "jjlb": "ETF", "tab1PAGENO": 1})
+            try:
+                payload = json.loads(_https_get(f"https://www.szse.cn/api/report/ShowReport/data?{params}",
+                                                "https://www.szse.cn/market/fund/volume/etf/index.html").decode("utf-8", errors="replace"))
+                block = payload[0] if isinstance(payload, list) and payload else {}
+                for item_row in block.get("data") or []:
+                    date = str(item_row.get("size_date") or "").replace("-", "")
+                    shares = float(str(item_row.get("current_size") or "0").replace(",", "")) * 1e4
+                    if len(date) == 8 and shares > 0:
+                        rows.append((date, item["code"], shares, "深交所 ETF 规模披露"))
+                if not (block.get("data") or []) and (block.get("metadata") or {}).get("recordcount", 0):
+                    errors.append(f"深交所 {item['code']} {range_start} 至 {range_stop}: 未返回数据页")
+            except Exception as exc:
+                errors.append(f"深交所 {item['code']} {range_start} 至 {range_stop}: {type(exc).__name__}")
+            range_start = range_stop + timedelta(days=1)
     return rows, errors
 
 
@@ -356,16 +366,23 @@ def update_once(path: str | None = None) -> dict[str, Any]:
         if latest and trade_date < latest:
             return _run_record("skipped", trade_date, f"行情日期 {trade_date} 早于数据库最新日期 {latest}，保留旧快照", started)
 
-        # Backfill daily close prices and market turnover for the statistics table once
-        # per trading day. The first run loads up to 1,023 sessions; later runs are incremental.
+        # Backfill close/turnover history once per day. Existing listings get a short
+        # incremental window; newly added ETFs get enough bars to build a year of history.
         conn = connect(path or DB_PATH)
         try:
             checked_for = conn.execute("SELECT value FROM app_meta WHERE key='daily_closes_checked_for'").fetchone()
-            close_count = conn.execute("SELECT COUNT(*) FROM daily_closes").fetchone()[0]
+            close_counts = {row["code"]: row["n"] for row in conn.execute(
+                "SELECT code,COUNT(*) AS n FROM daily_closes GROUP BY code"
+            )}
         finally:
             conn.close()
         if not checked_for or checked_for[0] != trade_date:
-            daily_rows, daily_errors = fetch_sina_daily(etfs, 1023 if close_count == 0 else 10)
+            need_history = [item for item in etfs if close_counts.get(item["code"], 0) < 220]
+            incremental = [item for item in etfs if item["code"] not in {row["code"] for row in need_history}]
+            daily_rows, daily_errors = fetch_sina_daily(need_history, 1023) if need_history else ({}, {})
+            recent_rows, recent_errors = fetch_sina_daily(incremental, 10) if incremental else ({}, {})
+            daily_rows.update(recent_rows)
+            daily_errors.update(recent_errors)
             conn = connect(path or DB_PATH)
             try:
                 conn.execute("BEGIN IMMEDIATE")

@@ -9,6 +9,7 @@
     "deploy": "wrangler deploy",
     "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test",
     "db:migrate:local": "python3 scripts/migrate_sqlite.py",
+    "db:backfill:reference": "python3 scripts/backfill_reference_basket.py",
     "db:migrate:remote": "wrangler d1 migrations apply etf --remote",
     "db:sync:local": "bash scripts/sync-d1.sh pull-local",
     "db:sync:remote": "bash scripts/sync-d1.sh push-remote",

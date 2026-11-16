@@ -1,4 +1,4 @@
-import { loadDashboard, loadFlowDetail, loadPoolStatistics, type Env } from "./db.ts";
+import { loadDashboard, loadFlowDetail, loadPoolStatistics, loadFlowOverview, type Env } from "./db.ts";
 import { collectConfirmedDaily, fetchLiveFlow } from "./collector.ts";
 
 function json(data:unknown,status=200){return Response.json(data,{status,headers:{"Cache-Control":"no-store"}});}
@@ -20,6 +20,7 @@ export default {
         const raw=Number(url.searchParams.get("days")||20),days=Math.min(Math.max(Number.isFinite(raw)?Math.trunc(raw):20,1),240);
         return cachedRead(request,env,async()=>({days,rows:await loadPoolStatistics(env.DB,days)}));
       }
+      if(url.pathname==="/api/flow-overview"&&request.method==="GET")return cachedRead(request,env,()=>loadFlowOverview(env.DB));
       if(url.pathname==="/api/flow-detail"&&request.method==="GET"){
         const date=url.searchParams.get("date")||"";if(!/^\d{8}$/.test(date))return json({error:"日期格式应为 YYYYMMDD"},400);
         const detail=await loadFlowDetail(env.DB,date);if(!detail.items.length)return json({error:"所选日期没有份额明细"},404);return json(detail);

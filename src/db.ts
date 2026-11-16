@@ -38,20 +38,22 @@ export async function loadDashboard(db: D1Database) {
     WHERE e.group_name='core' ORDER BY h.trade_date,h.code
   `).all<{trade_date:string;code:string;shares:number;source:string;group_name:string}>();
   const codes = core.map(item => String(item.code));
-  const byDate = new Map<string,Map<string,number>>(), unconfirmed = new Set<string>();
+  const byDate = new Map<string,Map<string,number>>(), unconfirmed = new Set<string>(), firstSeen = new Map<string,string>();
   for (const row of history.results ?? []) {
     if (row.source === "腾讯行情份额字段") unconfirmed.add(row.trade_date);
+    if (!firstSeen.has(row.code)) firstSeen.set(row.code,row.trade_date);
     if (!byDate.has(row.trade_date)) byDate.set(row.trade_date,new Map());
     byDate.get(row.trade_date)!.set(row.code,Number(row.shares));
   }
-  let previous: number | null = null;
+  const previous=new Map<string,number>(),changes=new Map<string,Map<string,number>>();
+  for(const row of history.results??[]){const old=previous.get(row.code),shares=Number(row.shares);if(old!==undefined){if(!changes.has(row.trade_date))changes.set(row.trade_date,new Map());changes.get(row.trade_date)!.set(row.code,(shares-old)/1e8);}previous.set(row.code,shares);}
   const pool = [...byDate.keys()].sort().flatMap(date => {
     if (unconfirmed.has(date)) return [];
     const shares=byDate.get(date)!;
-    if (!codes.length || !codes.every(code => shares.has(code))) return [];
-    const total=codes.reduce((n,code)=>n+shares.get(code)!,0),delta=previous===null?null:(total-previous)/1e8;
-    previous=total;
-    return [{date,shares_yi:total/1e8,delta_yi:delta,core_count:codes.length}];
+    const active=codes.filter(code=>(firstSeen.get(code)||date)<=date),dailyChanges=changes.get(date);
+    if (!active.length || !active.every(code => shares.has(code)&&dailyChanges?.has(code))) return [];
+    const total=active.reduce((n,code)=>n+shares.get(code)!,0),delta=active.reduce((n,code)=>n+dailyChanges!.get(code)!,0);
+    return [{date,shares_yi:total/1e8,delta_yi:delta,core_count:active.length}];
   });
   const latest_run = await db.prepare("SELECT id,started_at,finished_at,status,trade_date,message,source FROM collection_runs ORDER BY id DESC LIMIT 1").first();
   const metaRows = await db.prepare("SELECT key,value FROM app_meta").all<{key:string;value:string}>();
@@ -106,23 +108,76 @@ export async function loadPoolStatistics(db: D1Database, days: number) {
     db.prepare("SELECT trade_date,code,close_price FROM daily_closes WHERE code IN (SELECT code FROM etfs WHERE group_name='core') ORDER BY trade_date").all<{trade_date:string;code:string;close_price:number}>(),
     db.prepare("SELECT trade_date,code,payload_json FROM daily_snapshots WHERE trade_date=(SELECT MAX(trade_date) FROM daily_snapshots)").all<{trade_date:string;code:string;payload_json:string}>(),
   ]);
-  const codes=(coreRows.results??[]).map(row=>row.code), changes=new Map<string,Map<string,number>>(), unconfirmed=new Set<string>(), prev=new Map<string,number>();
-  for(const row of histRows.results??[]){if(row.source==="腾讯行情份额字段")unconfirmed.add(row.trade_date);if(prev.has(row.code)){if(!changes.has(row.trade_date))changes.set(row.trade_date,new Map());changes.get(row.trade_date)!.set(row.code,(Number(row.shares)-prev.get(row.code)!)/1e8);}prev.set(row.code,Number(row.shares));}
+  const codes=(coreRows.results??[]).map(row=>row.code), changes=new Map<string,Map<string,number>>(), unconfirmed=new Set<string>(), prev=new Map<string,number>(), firstSeen=new Map<string,string>();
+  for(const row of histRows.results??[]){if(row.source==="腾讯行情份额字段")unconfirmed.add(row.trade_date);if(!firstSeen.has(row.code))firstSeen.set(row.code,row.trade_date);if(prev.has(row.code)){if(!changes.has(row.trade_date))changes.set(row.trade_date,new Map());changes.get(row.trade_date)!.set(row.code,(Number(row.shares)-prev.get(row.code)!)/1e8);}prev.set(row.code,Number(row.shares));}
   const activity=new Map<string,Map<string,typeof activityRows.results[number]>>();for(const row of activityRows.results??[]){if(!activity.has(row.trade_date))activity.set(row.trade_date,new Map());activity.get(row.trade_date)!.set(row.code,row);}
   const prices=new Map<string,Map<string,number>>();for(const row of closeRows.results??[]){if(!prices.has(row.trade_date))prices.set(row.trade_date,new Map());prices.get(row.trade_date)!.set(row.code,Number(row.close_price));}
   const latest=(snapshotRows.results??[])[0]?.trade_date;const live=new Map<string,number>();for(const row of snapshotRows.results??[]){const p=JSON.parse(row.payload_json);if(p.price)live.set(row.code,Number(p.price));}
   const amountHistory:number[]=[],out=[];
   for(const date of [...changes.keys()].sort()){
-    if(unconfirmed.has(date))continue;const delta=changes.get(date)!;if(!codes.length||!codes.every(c=>delta.has(c)))continue;
-    const shares_change_yi=codes.reduce((n,c)=>n+delta.get(c)!,0),dayPrices=new Map(prices.get(date));if(date===latest)for(const [c,p]of live)dayPrices.set(c,p);
-    const moneyComplete=codes.every(c=>dayPrices.has(c)),buy_amount_yi=moneyComplete?codes.reduce((n,c)=>n+Math.max(delta.get(c)!,0)*dayPrices.get(c)!,0):null;
-    const sell_amount_yi=moneyComplete?codes.reduce((n,c)=>n+Math.abs(Math.min(delta.get(c)!,0))*dayPrices.get(c)!,0):null;
-    const acts=activity.get(date),turnoverComplete=codes.every(c=>acts?.get(c)?.amount_yi!=null),volumeComplete=codes.every(c=>acts?.get(c)?.volume_lots!=null);
-    const turnover_yi=turnoverComplete?codes.reduce((n,c)=>n+Number(acts!.get(c)!.amount_yi),0):null;
-    const volume_yi=volumeComplete?codes.reduce((n,c)=>n+Number(acts!.get(c)!.volume_lots)*100/1e8,0):null;
+    if(unconfirmed.has(date))continue;const delta=changes.get(date)!,active=codes.filter(c=>(firstSeen.get(c)||date)<=date);if(!active.length||!active.every(c=>delta.has(c)))continue;
+    const shares_change_yi=active.reduce((n,c)=>n+delta.get(c)!,0),dayPrices=new Map(prices.get(date));if(date===latest)for(const [c,p]of live)dayPrices.set(c,p);
+    const moneyComplete=active.every(c=>dayPrices.has(c)),buy_amount_yi=moneyComplete?active.reduce((n,c)=>n+Math.max(delta.get(c)!,0)*dayPrices.get(c)!,0):null;
+    const sell_amount_yi=moneyComplete?active.reduce((n,c)=>n+Math.abs(Math.min(delta.get(c)!,0))*dayPrices.get(c)!,0):null;
+    const acts=activity.get(date),turnoverComplete=active.every(c=>acts?.get(c)?.amount_yi!=null),volumeComplete=active.every(c=>acts?.get(c)?.volume_lots!=null);
+    const turnover_yi=turnoverComplete?active.reduce((n,c)=>n+Number(acts!.get(c)!.amount_yi),0):null;
+    const volume_yi=volumeComplete?active.reduce((n,c)=>n+Number(acts!.get(c)!.volume_lots)*100/1e8,0):null;
     const baseline=amountHistory.length?amountHistory.slice(-20).reduce((a,b)=>a+b,0)/Math.min(20,amountHistory.length):0;
-    out.push({date,pool_name:"汪汪队ETF合计",shares_change_yi,buy_amount_yi,sell_amount_yi,net_amount_yi:moneyComplete?buy_amount_yi!-sell_amount_yi!:null,turnover_yi,volume_yi,turnover_multiple:turnover_yi!=null&&baseline>0?turnover_yi/baseline:null,signal:shares_change_yi>0?"份额净增加":shares_change_yi<0?"份额净减少":"份额持平"});
+    out.push({date,pool_name:"汪汪队ETF合计",shares_change_yi,buy_amount_yi,sell_amount_yi,net_amount_yi:moneyComplete?buy_amount_yi!-sell_amount_yi!:null,turnover_yi,volume_yi,turnover_multiple:turnover_yi!=null&&baseline>0?turnover_yi/baseline:null,signal:shares_change_yi>0?"份额净增加":shares_change_yi<0?"份额净减少":"份额持平",coverage_count:active.length,basket_count:codes.length});
     if(turnoverComplete)amountHistory.push(turnover_yi!);
   }
   return days>0?out.slice(-days):out;
+}
+
+export async function loadFlowOverview(db: D1Database) {
+  const [etfRows,historyRows,closeRows,snapshotRows]=await Promise.all([
+    db.prepare("SELECT code,name,index_name,huijin_yi FROM etfs WHERE group_name='core' ORDER BY code").all<{code:string;name:string;index_name:string;huijin_yi:number|null}>(),
+    db.prepare("SELECT trade_date,code,shares,source FROM share_history WHERE code IN (SELECT code FROM etfs WHERE group_name='core') ORDER BY trade_date,code").all<{trade_date:string;code:string;shares:number;source:string}>(),
+    db.prepare("SELECT trade_date,code,close_price FROM daily_closes WHERE code IN (SELECT code FROM etfs WHERE group_name='core') ORDER BY trade_date,code").all<{trade_date:string;code:string;close_price:number}>(),
+    db.prepare("SELECT trade_date,code,payload_json FROM daily_snapshots WHERE trade_date=(SELECT MAX(trade_date) FROM daily_snapshots)").all<{trade_date:string;code:string;payload_json:string}>(),
+  ]);
+  const etfs=etfRows.results??[],codes=etfs.map(row=>row.code);
+  if(!codes.length)return {as_of_date:null,metrics:[],indexes:[],etfs:[],core_count:0};
+  const changes=new Map<string,Map<string,number>>(),sharesByDate=new Map<string,Map<string,number>>(),unconfirmed=new Set<string>(),previous=new Map<string,number>(),firstSeen=new Map<string,string>();
+  for(const row of historyRows.results??[]){
+    const shares=Number(row.shares);if(row.source==="腾讯行情份额字段")unconfirmed.add(row.trade_date);
+    if(!firstSeen.has(row.code))firstSeen.set(row.code,row.trade_date);
+    if(!sharesByDate.has(row.trade_date))sharesByDate.set(row.trade_date,new Map());sharesByDate.get(row.trade_date)!.set(row.code,shares);
+    if(previous.has(row.code)){if(!changes.has(row.trade_date))changes.set(row.trade_date,new Map());changes.get(row.trade_date)!.set(row.code,(shares-previous.get(row.code)!)/1e8);}
+    previous.set(row.code,shares);
+  }
+  const prices=new Map<string,Map<string,number>>();for(const row of closeRows.results??[]){if(!prices.has(row.trade_date))prices.set(row.trade_date,new Map());prices.get(row.trade_date)!.set(row.code,Number(row.close_price));}
+  const latest=snapshotRows.results?.[0]?.trade_date,live=new Map<string,number>();
+  for(const row of snapshotRows.results??[]){try{const price=Number((JSON.parse(row.payload_json) as {price?:unknown}).price);if(price>0)live.set(row.code,price);}catch{}}
+  const daily:{date:string;amount_yi:number;by_code:Map<string,number>}[]=[];
+  for(const date of [...changes.keys()].sort()){
+    const delta=changes.get(date)!,active=codes.filter(code=>(firstSeen.get(code)||date)<=date);if(unconfirmed.has(date)||!active.length||!active.every(code=>delta.has(code)))continue;
+    const dayPrices=new Map(prices.get(date));if(date===latest)for(const [code,price]of live)dayPrices.set(code,price);
+    if(!active.every(code=>dayPrices.has(code)))continue;
+    const by_code=new Map(active.map(code=>[code,delta.get(code)!*dayPrices.get(code)!]));
+    daily.push({date,amount_yi:[...by_code.values()].reduce((sum,value)=>sum+value,0),by_code});
+  }
+  if(!daily.length)return {as_of_date:null,metrics:[],indexes:[],etfs:[],core_count:codes.length};
+  const as_of_date=daily.at(-1)!.date,year=as_of_date.slice(0,4);
+  const shiftDays=(value:string,days:number)=>{const d=new Date(`${value.slice(0,4)}-${value.slice(4,6)}-${value.slice(6,8)}T00:00:00Z`);d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10).replaceAll("-","");};
+  const shiftMonths=(value:string,months:number)=>{const y=Number(value.slice(0,4)),m=Number(value.slice(4,6))-1,day=Number(value.slice(6,8));const first=new Date(Date.UTC(y,m+months,1));const lastDay=new Date(Date.UTC(first.getUTCFullYear(),first.getUTCMonth()+1,0)).getUTCDate();return `${first.getUTCFullYear()}${String(first.getUTCMonth()+1).padStart(2,"0")}${String(Math.min(day,lastDay)).padStart(2,"0")}`;};
+  const rangeStarts={latest:as_of_date,week:shiftDays(as_of_date,-6),month:shiftMonths(as_of_date,-1),half_year:shiftMonths(as_of_date,-6),year:shiftMonths(as_of_date,-12),ytd:`${year}0101`};
+  const specs=[{key:"latest",label:"最新交易日合计"},{key:"week",label:"近一周累计"},{key:"month",label:"近一月累计"},{key:"half_year",label:"近半年累计"},{key:"year",label:"近一年累计"},{key:"ytd",label:"今年以来累计"}];
+  const datesByWindow=new Map<string,string[]>();
+  const metrics=specs.map(spec=>{const selected=daily.filter(row=>row.date>=rangeStarts[spec.key as keyof typeof rangeStarts]&&row.date<=as_of_date);datesByWindow.set(spec.key,selected.map(row=>row.date));return {key:spec.key,label:spec.label,value_yi:selected.reduce((sum,row)=>sum+row.amount_yi,0),trading_days:selected.length,start_date:selected[0]?.date??null,as_of_date:selected.at(-1)?.date??null};});
+  const byCode=new Map<string,Map<string,number>>();for(const code of codes)byCode.set(code,new Map());
+  for(const day of daily)for(const [code,value]of day.by_code)byCode.get(code)!.set(day.date,value);
+  const sumCode=(code:string,window:string)=>{const selected=new Set(datesByWindow.get(window)??[]);return [...(byCode.get(code)??new Map())].reduce((sum,[date,value])=>sum+(selected.has(date)?value:0),0);};
+  const latestShares=sharesByDate.get(as_of_date)??new Map();
+  const rows=etfs.map(etf=>({code:etf.code,name:etf.name,index_name:etf.index_name,huijin_yi:etf.huijin_yi,shares_yi:(latestShares.get(etf.code)??0)/1e8,
+    latest_yi:sumCode(etf.code,"latest"),week_yi:sumCode(etf.code,"week"),month_yi:sumCode(etf.code,"month"),ytd_yi:sumCode(etf.code,"ytd")}));
+  const recent_dates=daily.slice(-10).map(row=>row.date);
+  const daily_matrix=etfs.map(etf=>({code:etf.code,name:etf.name,index_name:etf.index_name,values:recent_dates.map(date=>daily.find(day=>day.date===date)?.by_code.get(etf.code)??null)}));
+  const grouped=new Map<string,{index_name:string;etf_count:number;shares_yi:number;reported_huijin_yi:number;reported_huijin_count:number;latest_yi:number;week_yi:number;month_yi:number;ytd_yi:number}>();
+  for(const row of rows){const group=grouped.get(row.index_name)??{index_name:row.index_name,etf_count:0,shares_yi:0,reported_huijin_yi:0,reported_huijin_count:0,latest_yi:0,week_yi:0,month_yi:0,ytd_yi:0};group.etf_count++;for(const key of ["shares_yi","latest_yi","week_yi","month_yi","ytd_yi"] as const)group[key]+=row[key];if(row.huijin_yi!=null){group.reported_huijin_yi+=Number(row.huijin_yi);group.reported_huijin_count++;}grouped.set(row.index_name,group);}
+  rows.sort((a,b)=>b.month_yi-a.month_yi);
+  const indexes=[...grouped.values()].sort((a,b)=>b.month_yi-a.month_yi);
+  return {as_of_date,year,core_count:codes.length,metrics,indexes,etfs:rows,recent_dates,daily_matrix,
+    method:"区间按日历跨度回溯，交易日数按实际交易记录动态统计，节假日不计。新上市 ETF 从首次披露份额后纳入当日合计；逐只 ETF 份额变化 × 同日收盘价，最新日缺收盘价时使用行情快照。历史每日覆盖数量随篮子中新上市 ETF 逐步纳入而变化。",
+    holding_note:"2025年报披露份额仅代表历史披露时点；ETF总份额是全市场发行量，不代表国家队当前持有。申赎估算不能识别实际交易账户。"};
 }

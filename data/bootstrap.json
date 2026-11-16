@@ -8,6 +8,150 @@
   },
   "etfs": [
     {
+      "code": "159338",
+      "tcode": "sz159338",
+      "name": "中证A500ETF国泰",
+      "index": "中证A500",
+      "group": "core",
+      "huijin_yi": null
+    },
+    {
+      "code": "159339",
+      "tcode": "sz159339",
+      "name": "A500ETF银华",
+      "index": "中证A500",
+      "group": "watch",
+      "huijin_yi": null
+    },
+    {
+      "code": "159351",
+      "tcode": "sz159351",
+      "name": "A500ETF嘉实",
+      "index": "中证A500",
+      "group": "core",
+      "huijin_yi": null
+    },
+    {
+      "code": "159352",
+      "tcode": "sz159352",
+      "name": "A500ETF南方",
+      "index": "中证A500",
+      "group": "core",
+      "huijin_yi": null
+    },
+    {
+      "code": "159361",
+      "tcode": "sz159361",
+      "name": "A500ETF易方达",
+      "index": "中证A500",
+      "group": "core",
+      "huijin_yi": null
+    },
+    {
+      "code": "159629",
+      "tcode": "sz159629",
+      "name": "中证1000ETF富国",
+      "index": "中证1000",
+      "group": "core",
+      "huijin_yi": 36.34
+    },
+    {
+      "code": "159633",
+      "tcode": "sz159633",
+      "name": "中证1000ETF易方达",
+      "index": "中证1000",
+      "group": "core",
+      "huijin_yi": null
+    },
+    {
+      "code": "159845",
+      "tcode": "sz159845",
+      "name": "中证1000ETF华夏",
+      "index": "中证1000",
+      "group": "core",
+      "huijin_yi": 137.26
+    },
+    {
+      "code": "159901",
+      "tcode": "sz159901",
+      "name": "深证100ETF易方达",
+      "index": "深证100",
+      "group": "core",
+      "huijin_yi": 7.19
+    },
+    {
+      "code": "159915",
+      "tcode": "sz159915",
+      "name": "创业板ETF易方达",
+      "index": "创业板指",
+      "group": "core",
+      "huijin_yi": 170.2
+    },
+    {
+      "code": "159919",
+      "tcode": "sz159919",
+      "name": "沪深300ETF嘉实",
+      "index": "沪深300",
+      "group": "core",
+      "huijin_yi": 354.98
+    },
+    {
+      "code": "159922",
+      "tcode": "sz159922",
+      "name": "中证500ETF嘉实",
+      "index": "中证500",
+      "group": "core",
+      "huijin_yi": 23.11
+    },
+    {
+      "code": "159952",
+      "tcode": "sz159952",
+      "name": "创业板ETF广发",
+      "index": "创业板指",
+      "group": "core",
+      "huijin_yi": 10.91
+    },
+    {
+      "code": "159977",
+      "tcode": "sz159977",
+      "name": "创业板ETF天弘",
+      "index": "创业板指",
+      "group": "core",
+      "huijin_yi": null
+    },
+    {
+      "code": "510050",
+      "tcode": "sh510050",
+      "name": "上证50ETF华夏",
+      "index": "上证50",
+      "group": "core",
+      "huijin_yi": 487.59
+    },
+    {
+      "code": "510100",
+      "tcode": "sh510100",
+      "name": "上证50ETF易方达",
+      "index": "上证50",
+      "group": "core",
+      "huijin_yi": null
+    },
+    {
+      "code": "510180",
+      "tcode": "sh510180",
+      "name": "上证180ETF华安",
+      "index": "上证180",
+      "group": "core",
+      "huijin_yi": 52.32
+    },
+    {
+      "code": "510230",
+      "tcode": "sh510230",
+      "name": "金融ETF国泰",
+      "index": "上证180金融",
+      "group": "core",
+      "huijin_yi": 25.64
+    },
+    {
       "code": "510300",
       "tcode": "sh510300",
       "name": "沪深300ETF华泰柏瑞",
@@ -24,52 +168,12 @@
       "huijin_yi": 558.94
     },
     {
-      "code": "510050",
-      "tcode": "sh510050",
-      "name": "上证50ETF华夏",
-      "index": "上证50",
-      "group": "core",
-      "huijin_yi": 487.59
-    },
-    {
       "code": "510330",
       "tcode": "sh510330",
       "name": "沪深300ETF华夏",
       "index": "沪深300",
       "group": "core",
       "huijin_yi": 420.28
-    },
-    {
-      "code": "159919",
-      "tcode": "sz159919",
-      "name": "沪深300ETF嘉实",
-      "index": "沪深300",
-      "group": "core",
-      "huijin_yi": 354.98
-    },
-    {
-      "code": "512100",
-      "tcode": "sh512100",
-      "name": "中证1000ETF南方",
-      "index": "中证1000",
-      "group": "core",
-      "huijin_yi": 221.69
-    },
-    {
-      "code": "588080",
-      "tcode": "sh588080",
-      "name": "科创50ETF易方达",
-      "index": "科创50",
-      "group": "core",
-      "huijin_yi": 216.07
-    },
-    {
-      "code": "159915",
-      "tcode": "sz159915",
-      "name": "创业板ETF易方达",
-      "index": "创业板指",
-      "group": "core",
-      "huijin_yi": 170.2
     },
     {
       "code": "510500",
@@ -80,52 +184,20 @@
       "huijin_yi": 142.17
     },
     {
-      "code": "159845",
-      "tcode": "sz159845",
-      "name": "中证1000ETF华夏",
+      "code": "512050",
+      "tcode": "sh512050",
+      "name": "A500ETF华夏",
+      "index": "中证A500",
+      "group": "core",
+      "huijin_yi": null
+    },
+    {
+      "code": "512100",
+      "tcode": "sh512100",
+      "name": "中证1000ETF南方",
       "index": "中证1000",
       "group": "core",
-      "huijin_yi": 137.26
-    },
-    {
-      "code": "560010",
-      "tcode": "sh560010",
-      "name": "中证1000ETF广发",
-      "index": "中证1000",
-      "group": "core",
-      "huijin_yi": 105.5
-    },
-    {
-      "code": "510180",
-      "tcode": "sh510180",
-      "name": "上证180ETF华安",
-      "index": "上证180",
-      "group": "core",
-      "huijin_yi": 52.32
-    },
-    {
-      "code": "159629",
-      "tcode": "sz159629",
-      "name": "中证1000ETF富国",
-      "index": "中证1000",
-      "group": "core",
-      "huijin_yi": 36.34
-    },
-    {
-      "code": "510230",
-      "tcode": "sh510230",
-      "name": "金融ETF国泰",
-      "index": "上证180金融",
-      "group": "core",
-      "huijin_yi": 25.64
-    },
-    {
-      "code": "159922",
-      "tcode": "sz159922",
-      "name": "中证500ETF嘉实",
-      "index": "中证500",
-      "group": "core",
-      "huijin_yi": 23.11
+      "huijin_yi": 221.69
     },
     {
       "code": "512500",
@@ -136,6 +208,14 @@
       "huijin_yi": 20.51
     },
     {
+      "code": "515330",
+      "tcode": "sh515330",
+      "name": "沪深300ETF天弘",
+      "index": "沪深300",
+      "group": "core",
+      "huijin_yi": null
+    },
+    {
       "code": "515800",
       "tcode": "sh515800",
       "name": "中证800ETF汇添富",
@@ -144,12 +224,52 @@
       "huijin_yi": 13.08
     },
     {
-      "code": "159952",
-      "tcode": "sz159952",
-      "name": "创业板ETF广发",
-      "index": "创业板指",
+      "code": "560010",
+      "tcode": "sh560010",
+      "name": "中证1000ETF广发",
+      "index": "中证1000",
       "group": "core",
-      "huijin_yi": 10.91
+      "huijin_yi": 105.5
+    },
+    {
+      "code": "560050",
+      "tcode": "sh560050",
+      "name": "MSCI中国A50ETF汇添富",
+      "index": "MSCI中国A50",
+      "group": "core",
+      "huijin_yi": null
+    },
+    {
+      "code": "563220",
+      "tcode": "sh563220",
+      "name": "A500ETF富国",
+      "index": "中证A500",
+      "group": "core",
+      "huijin_yi": null
+    },
+    {
+      "code": "563360",
+      "tcode": "sh563360",
+      "name": "A500ETF华泰柏瑞",
+      "index": "中证A500",
+      "group": "core",
+      "huijin_yi": null
+    },
+    {
+      "code": "563800",
+      "tcode": "sh563800",
+      "name": "A500ETF广发",
+      "index": "中证A500",
+      "group": "core",
+      "huijin_yi": null
+    },
+    {
+      "code": "588000",
+      "tcode": "sh588000",
+      "name": "科创50ETF华夏",
+      "index": "科创50",
+      "group": "core",
+      "huijin_yi": null
     },
     {
       "code": "588050",
@@ -160,44 +280,12 @@
       "huijin_yi": 9.7
     },
     {
-      "code": "159901",
-      "tcode": "sz159901",
-      "name": "深证100ETF易方达",
-      "index": "深证100",
-      "group": "core",
-      "huijin_yi": 7.19
-    },
-    {
-      "code": "588000",
-      "tcode": "sh588000",
-      "name": "科创50ETF华夏",
+      "code": "588080",
+      "tcode": "sh588080",
+      "name": "科创50ETF易方达",
       "index": "科创50",
-      "group": "watch",
-      "huijin_yi": 0.0
-    },
-    {
-      "code": "512050",
-      "tcode": "sh512050",
-      "name": "A500ETF华夏",
-      "index": "中证A500",
-      "group": "watch",
-      "huijin_yi": 0.0
-    },
-    {
-      "code": "159338",
-      "tcode": "sz159338",
-      "name": "中证A500ETF国泰",
-      "index": "中证A500",
-      "group": "watch",
-      "huijin_yi": 0.0
-    },
-    {
-      "code": "159339",
-      "tcode": "sz159339",
-      "name": "A500ETF银华",
-      "index": "中证A500",
-      "group": "watch",
-      "huijin_yi": 0.0
+      "group": "core",
+      "huijin_yi": 216.07
     }
   ],
   "share_history": [

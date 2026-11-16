@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import calendar
 import sqlite3
-from datetime import datetime
+from datetime import date as calendar_date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -186,27 +187,37 @@ def load_dashboard(code: str = "510300", days: int = 30) -> dict[str, Any]:
                ORDER BY h.trade_date,h.code"""
         ).fetchall()
         by_date: dict[str, dict[str, float]] = {}
+        share_deltas: dict[str, dict[str, float]] = {}
         unconfirmed_dates: set[str] = set()
+        first_seen: dict[str, str] = {}
+        previous_by_code: dict[str, float] = {}
         for row in aggregate_rows:
-            by_date.setdefault(row["trade_date"], {})[row["code"]] = float(row["shares"])
+            code, date, shares = row["code"], row["trade_date"], float(row["shares"])
+            by_date.setdefault(date, {})[code] = shares
+            first_seen.setdefault(code, date)
+            if code in previous_by_code:
+                share_deltas.setdefault(date, {})[code] = (shares - previous_by_code[code]) / 1e8
+            previous_by_code[code] = shares
             if row["source"] == "腾讯行情份额字段":
                 unconfirmed_dates.add(row["trade_date"])
         pool_history = []
-        previous_total = None
         for date in sorted(by_date):
             if date in unconfirmed_dates:
                 continue
-            # Aggregate only exact same-day observations. Forward-filling a missing ETF
-            # would turn unknown activity into a misleading zero-change estimate.
-            if not core_codes or not all(code in by_date[date] for code in core_codes):
+            # Include each ETF from its first published share observation (newer ETFs
+            # did not exist for the full historical window). Never forward-fill gaps.
+            active_codes = [code for code in core_codes if first_seen.get(code, date) <= date]
+            if not active_codes or not all(code in by_date[date] for code in active_codes):
                 continue
-            total = sum(by_date[date][code] for code in core_codes)
+            changes = share_deltas.get(date, {})
+            if not all(code in changes for code in active_codes):
+                continue
+            total = sum(by_date[date][code] for code in active_codes)
             pool_history.append({
                 "date": date, "shares_yi": total / 1e8,
-                "delta_yi": None if previous_total is None else (total - previous_total) / 1e8,
-                "core_count": len(core_codes),
+                "delta_yi": sum(changes.values()),
+                "core_count": len(active_codes),
             })
-            previous_total = total
 
         # Keep the full range in the API: the two charts have independent range selectors.
         # `days` remains accepted for compatibility with older local URLs.
@@ -330,9 +341,11 @@ def load_pool_statistics(days: int = 20) -> list[dict[str, Any]]:
         deltas_by_date: dict[str, dict[str, float]] = {}
         unconfirmed_dates: set[str] = set()
         previous_by_code: dict[str, float] = {}
+        first_seen: dict[str, str] = {}
         for row in histories:
             code = row["code"]
             shares = float(row["shares"])
+            first_seen.setdefault(code, row["trade_date"])
             if row["source"] == "腾讯行情份额字段":
                 unconfirmed_dates.add(row["trade_date"])
             if code in previous_by_code:
@@ -369,22 +382,23 @@ def load_pool_statistics(days: int = 20) -> list[dict[str, Any]]:
             if trade_date in unconfirmed_dates:
                 continue
             changes = deltas_by_date[trade_date]
-            if not core_codes or not all(code in changes for code in core_codes):
+            active_codes = [code for code in core_codes if first_seen.get(code, trade_date) <= trade_date]
+            if not active_codes or not all(code in changes for code in active_codes):
                 continue
-            change_yi = sum(changes.values())
+            change_yi = sum(changes[code] for code in active_codes)
             prices = prices_by_date.get(trade_date, {}).copy()
             if trade_date == latest_snapshot:
                 prices.update(live_prices)
-            money_complete = all(code in prices for code in core_codes)
-            buy_amount = sum(max(changes[code], 0) * prices[code] for code in core_codes) if money_complete else None
-            sell_amount = sum(abs(min(changes[code], 0)) * prices[code] for code in core_codes) if money_complete else None
+            money_complete = all(code in prices for code in active_codes)
+            buy_amount = sum(max(changes[code], 0) * prices[code] for code in active_codes) if money_complete else None
+            sell_amount = sum(abs(min(changes[code], 0)) * prices[code] for code in active_codes) if money_complete else None
             net_amount = buy_amount - sell_amount if money_complete else None
 
             activity = activity_by_date.get(trade_date, {})
-            turnover_complete = all(code in activity and activity[code]["amount_yi"] is not None for code in core_codes)
-            volume_complete = all(code in activity and activity[code]["volume_lots"] is not None for code in core_codes)
-            turnover = sum(float(activity[code]["amount_yi"]) for code in core_codes) if turnover_complete else None
-            volume_yi = sum(float(activity[code]["volume_lots"]) * 100 / 1e8 for code in core_codes) if volume_complete else None
+            turnover_complete = all(code in activity and activity[code]["amount_yi"] is not None for code in active_codes)
+            volume_complete = all(code in activity and activity[code]["volume_lots"] is not None for code in active_codes)
+            turnover = sum(float(activity[code]["amount_yi"]) for code in active_codes) if turnover_complete else None
+            volume_yi = sum(float(activity[code]["volume_lots"]) * 100 / 1e8 for code in active_codes) if volume_complete else None
             baseline = sum(amount_history[-20:]) / min(20, len(amount_history)) if amount_history else 0
             multiple = turnover / baseline if turnover is not None and baseline > 0 else None
             if change_yi > 0:
@@ -399,10 +413,145 @@ def load_pool_statistics(days: int = 20) -> list[dict[str, Any]]:
                 "sell_amount_yi": sell_amount, "net_amount_yi": net_amount,
                 "turnover_yi": turnover, "volume_yi": volume_yi,
                 "turnover_multiple": multiple, "signal": signal,
+                "coverage_count": len(active_codes), "basket_count": len(core_codes),
             })
             if turnover_complete:
                 amount_history.append(turnover)
 
         return result[-days:] if days > 0 else result
+    finally:
+        conn.close()
+
+
+def load_flow_overview() -> dict[str, Any]:
+    """Return consistent rolling flow estimates and ETF/index breakdowns."""
+    conn = connect()
+    try:
+        etfs = [dict(row) for row in conn.execute(
+            "SELECT code,name,index_name,huijin_yi FROM etfs WHERE group_name='core' ORDER BY code"
+        )]
+        codes = [row["code"] for row in etfs]
+        if not codes:
+            return {"as_of_date": None, "metrics": [], "indexes": [], "etfs": [], "core_count": 0}
+
+        histories = conn.execute(
+            """SELECT trade_date,code,shares,source FROM share_history
+               WHERE code IN (SELECT code FROM etfs WHERE group_name='core') ORDER BY trade_date,code"""
+        ).fetchall()
+        prices_rows = conn.execute(
+            """SELECT trade_date,code,close_price FROM daily_closes
+               WHERE code IN (SELECT code FROM etfs WHERE group_name='core') ORDER BY trade_date,code"""
+        ).fetchall()
+        latest_snapshot = conn.execute("SELECT MAX(trade_date) FROM daily_snapshots").fetchone()[0]
+        live_prices: dict[str, float] = {}
+        if latest_snapshot:
+            for row in conn.execute("SELECT code,payload_json FROM daily_snapshots WHERE trade_date=?", (latest_snapshot,)):
+                try:
+                    price = float(json.loads(row["payload_json"]).get("price") or 0)
+                    if price > 0:
+                        live_prices[row["code"]] = price
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+
+        deltas: dict[str, dict[str, float]] = {}
+        shares_at_date: dict[str, dict[str, float]] = {}
+        first_seen: dict[str, str] = {}
+        unconfirmed: set[str] = set()
+        previous: dict[str, float] = {}
+        for row in histories:
+            date, code, shares = row["trade_date"], row["code"], float(row["shares"])
+            shares_at_date.setdefault(date, {})[code] = shares
+            first_seen.setdefault(code, date)
+            if row["source"] == "腾讯行情份额字段":
+                unconfirmed.add(date)
+            if code in previous:
+                deltas.setdefault(date, {})[code] = (shares - previous[code]) / 1e8
+            previous[code] = shares
+
+        prices: dict[str, dict[str, float]] = {}
+        for row in prices_rows:
+            prices.setdefault(row["trade_date"], {})[row["code"]] = float(row["close_price"])
+
+        daily: list[dict[str, Any]] = []
+        for date in sorted(deltas):
+            changes = deltas[date]
+            active_codes = [code for code in codes if first_seen.get(code, date) <= date]
+            if date in unconfirmed or not active_codes or not all(code in changes for code in active_codes):
+                continue
+            day_prices = prices.get(date, {}).copy()
+            if date == latest_snapshot:
+                day_prices.update(live_prices)
+            if not all(code in day_prices for code in active_codes):
+                continue
+            amounts = {code: changes[code] * day_prices[code] for code in active_codes}
+            daily.append({"date": date, "amount_yi": sum(amounts.values()), "by_code": amounts,
+                          "core_count": len(active_codes)})
+
+        if not daily:
+            return {"as_of_date": None, "metrics": [], "indexes": [], "etfs": [], "core_count": len(codes)}
+
+        as_of = daily[-1]["date"]
+        year = as_of[:4]
+        as_of_day = datetime.strptime(as_of, "%Y%m%d").date()
+        def months_before(months: int) -> calendar_date:
+            month_index = as_of_day.year * 12 + as_of_day.month - 1 - months
+            target_year, target_month0 = divmod(month_index, 12)
+            target_month = target_month0 + 1
+            return calendar_date(target_year, target_month, min(as_of_day.day, calendar.monthrange(target_year, target_month)[1]))
+        windows = [
+            ("latest", "最新交易日合计", as_of_day),
+            ("week", "近一周累计", as_of_day - timedelta(days=6)),
+            ("month", "近一月累计", months_before(1)),
+            ("half_year", "近半年累计", months_before(6)),
+            ("year", "近一年累计", months_before(12)),
+            ("ytd", "今年以来累计", calendar_date(as_of_day.year, 1, 1)),
+        ]
+        metrics = []
+        dates_by_window: dict[str, list[str]] = {}
+        for key, label, start_day in windows:
+            start_date = start_day.strftime("%Y%m%d")
+            selected = [row for row in daily if start_date <= row["date"] <= as_of]
+            dates_by_window[key] = [row["date"] for row in selected]
+            metrics.append({"key": key, "label": label, "value_yi": sum(row["amount_yi"] for row in selected),
+                            "trading_days": len(selected), "start_date": selected[0]["date"] if selected else None,
+                            "as_of_date": selected[-1]["date"] if selected else None})
+
+        amount_by_code: dict[str, dict[str, float]] = {code: {} for code in codes}
+        for item in daily:
+            for code, amount in item["by_code"].items():
+                amount_by_code[code][item["date"]] = amount
+        def sum_code(code: str, window: str) -> float:
+            selected_dates = set(dates_by_window[window])
+            return sum(value for date_key, value in amount_by_code[code].items() if date_key in selected_dates)
+
+        latest_shares = shares_at_date.get(as_of, {})
+        etf_rows = []
+        for etf in etfs:
+            code = etf["code"]
+            etf_rows.append({**etf, "shares_yi": latest_shares.get(code, 0) / 1e8,
+                "latest_yi": sum_code(code, "latest"), "week_yi": sum_code(code, "week"),
+                "month_yi": sum_code(code, "month"), "ytd_yi": sum_code(code, "ytd")})
+        indexes_map: dict[str, dict[str, Any]] = {}
+        for etf in etf_rows:
+            index = etf["index_name"]
+            group = indexes_map.setdefault(index, {"index_name": index, "etf_count": 0, "shares_yi": 0.0,
+                "reported_huijin_yi": 0.0, "reported_huijin_count": 0,
+                "latest_yi": 0.0, "week_yi": 0.0, "month_yi": 0.0, "ytd_yi": 0.0})
+            group["etf_count"] += 1
+            if etf["huijin_yi"] is not None:
+                group["reported_huijin_yi"] += float(etf["huijin_yi"])
+                group["reported_huijin_count"] += 1
+            for key in ("shares_yi", "latest_yi", "week_yi", "month_yi", "ytd_yi"):
+                group[key] += float(etf[key] or 0)
+        indexes = sorted(indexes_map.values(), key=lambda row: row["month_yi"], reverse=True)
+        etf_rows.sort(key=lambda row: row["month_yi"], reverse=True)
+        recent_dates = [row["date"] for row in daily[-10:]]
+        daily_matrix = [{"code": etf["code"], "name": etf["name"], "index_name": etf["index_name"],
+                         "values": [next((day["by_code"][etf["code"]] for day in daily if day["date"] == date), None)
+                                    for date in recent_dates]} for etf in etfs]
+        return {"as_of_date": as_of, "year": year, "core_count": len(codes), "metrics": metrics,
+            "recent_dates": recent_dates, "daily_matrix": daily_matrix, "indexes": indexes, "etfs": etf_rows,
+            "method": "区间按日历跨度回溯，交易日数按实际交易记录动态统计，节假日不计。新上市 ETF 从首次披露份额后纳入当日合计；逐只 ETF 份额变化 × 同日收盘价，最新日缺收盘价时使用行情快照。历史每日覆盖数量随篮子中新上市 ETF 逐步纳入而变化。",
+            "holding_note": "2025年报披露份额仅代表历史披露时点；ETF总份额是全市场发行量，不代表国家队当前持有。申赎估算不能识别实际交易账户。"}
     finally:
         conn.close()

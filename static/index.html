@@ -38,7 +38,7 @@
           <div class="hero-timing"><span id="share-update-note">收盘后 23:15 采行情；次日 08:30 补采交易所份额，未披露则后续继续重试</span><span id="collection-last-run">等待采集状态</span><span id="share-data-date"></span></div>
         </div>
         <aside class="signal-card" aria-label="今日资金代理信号">
-          <div class="signal-card-head"><span id="signal-label">今日判断 · 国家队是否上班（估算）</span><b id="signal-scope">重点池 20 只</b></div>
+          <div class="signal-card-head"><span id="signal-label">今日判断 · 国家队是否上班（估算）</span><b id="signal-scope">重点池 <span id="signal-scope-count" class="signal-scope-count">34</span> 只</b></div>
           <h2 id="signal-title">正在读取实时买卖估算…</h2>
           <p id="signal-copy">每 20 秒重取公开行情，估算主动买卖方向；不能识别国家队账户。</p>
           <div class="live-estimates" aria-label="重点 ETF 盘口买卖方向估算">
@@ -47,7 +47,7 @@
             <div><span>估算净方向</span><b id="live-net">—</b></div>
           </div>
           <div class="signal-meter"><i id="today-signal-meter"></i></div>
-          <div class="signal-card-foot"><span id="scope-label">20 只宽基 · 4 只扩展</span><b id="live-source">行情源时间等待中</b></div>
+          <div class="signal-card-foot"><span id="scope-label">34 只宽基 · 1 只扩展</span><b id="live-source">行情源时间等待中</b></div>
           <div class="signal-live"><span id="live-update-label">每 20 秒重新采集估算</span><span id="live-update-time">等待行情</span></div>
           <div class="source-sample"><span>数据源样例</span><a href="https://qt.gtimg.cn/q=sh510300" target="_blank" rel="noopener noreferrer">查看沪深 300 ETF（510300）原始行情 ↗</a><small>打开后可核对行情时间字段</small></div>
         </aside>
@@ -81,7 +81,7 @@
       <section class="charts-grid pool-charts" aria-label="汪汪队整体份额估算">
         <article class="panel chart-panel">
           <div class="panel-heading">
-            <div><h3>汪汪队每日份额变化估算</h3><p>20 只重点 ETF 合计 · 单位：亿份 · 正数净申购，负数净赎回</p></div>
+            <div><h3>汪汪队每日份额变化估算</h3><p>34 只重点 ETF 合计 · 单位：亿份 · 正数净申购，负数净赎回</p></div>
             <div class="segmented pool-range" role="group" aria-label="每日份额变化区间">
               <button data-pool="flow" data-days="60" class="active">近3月</button><button data-pool="flow" data-days="120">近6月</button><button data-pool="flow" data-days="240">近1年</button>
             </div>
@@ -126,11 +126,36 @@
         </div>
         <div class="table-scroll stats-table-scroll">
           <table>
-            <thead><tr><th>日期</th><th>基金名称</th><th class="right">份额变化</th><th class="right">买入总金额估算</th><th class="right">赎回总金额估算</th><th class="right">成交倍量</th><th>变化信号</th></tr></thead>
-            <tbody id="pool-stats-rows"><tr><td colspan="7" class="empty-row">正在汇总汪汪队数据…</td></tr></tbody>
+            <thead><tr><th>日期</th><th>基金名称</th><th class="right">份额变化</th><th class="right">买入总金额估算</th><th class="right">赎回总金额估算</th><th class="right">净申购/赎回</th><th class="right">成交倍量</th><th>变化信号</th></tr></thead>
+            <tbody id="pool-stats-rows"><tr><td colspan="8" class="empty-row">正在汇总汪汪队数据…</td></tr></tbody>
           </table>
         </div>
         <div class="table-foot"><span id="pool-stats-count">—</span><span>点击日期行查看逐只 ETF 的份额变化、估算金额与成交数据</span></div>
+      </section>
+
+      <section class="panel flow-overview-panel" aria-labelledby="flow-overview-title">
+        <div class="panel-heading flow-overview-heading">
+          <div><h3 id="flow-overview-title">国家队 ETF 资金动向估算</h3><p id="flow-overview-meta">按核心观察池份额变化与价格估算</p></div>
+          <span id="flow-overview-date" class="overview-asof">等待数据</span>
+        </div>
+        <div id="flow-metric-cards" class="flow-metric-grid" aria-live="polite">
+          <div class="flow-metric-card flow-metric-loading">正在汇总资金变化…</div>
+        </div>
+        <div class="overview-tables">
+          <div class="overview-table-block">
+            <div class="overview-subhead"><h4>按跟踪指数汇总</h4><span>单位：亿元；按近一月净额排序</span></div>
+            <div class="table-scroll overview-scroll"><table><thead><tr><th>指数品种</th><th class="right">ETF数</th><th class="right">ETF总份额（亿份）</th><th class="right">2025年报汇金披露（亿份）</th><th class="right">最新日</th><th class="right">近一周</th><th class="right">近一月</th><th class="right">今年以来</th></tr></thead><tbody id="flow-index-rows"><tr><td colspan="8" class="empty-row">正在加载…</td></tr></tbody></table></div>
+          </div>
+          <div class="overview-table-block">
+            <div class="overview-subhead"><h4>逐只核心 ETF</h4><span>单位：亿元；按近一月净额排序</span></div>
+            <div class="table-scroll overview-scroll"><table><thead><tr><th>ETF</th><th>跟踪指数</th><th class="right">ETF总份额（亿份）</th><th class="right">2025年报汇金披露（亿份）</th><th class="right">最新日</th><th class="right">近一周</th><th class="right">近一月</th><th class="right">今年以来</th></tr></thead><tbody id="flow-etf-rows"><tr><td colspan="8" class="empty-row">正在加载…</td></tr></tbody></table></div>
+          </div>
+          <div class="overview-table-block">
+            <div class="overview-subhead"><h4>最近 10 个交易日逐只变化</h4><span>金额为亿元，红色净申购，绿色净赎回；可横向滚动</span></div>
+            <div class="table-scroll overview-scroll daily-matrix-scroll"><table><thead id="flow-daily-head"></thead><tbody id="flow-daily-rows"><tr><td class="empty-row">正在加载…</td></tr></tbody></table></div>
+          </div>
+        </div>
+        <p id="flow-overview-method" class="overview-method">金额为份额变化 × 当日价格的申赎估算。</p>
       </section>
 
       <section class="panel table-panel">

@@ -1,6 +1,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   let dashboard = null;
+  let flowOverview = null;
   let poolRanges = {flow: 60, index: 240};
   let statsDays = 20;
   let poolStats = [];
@@ -20,8 +21,21 @@
   const shanghaiNow = () => new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).format(new Date());
   const marketPhase = now => {const weekday=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Shanghai",weekday:"short"}).format(new Date()).toLowerCase();if(weekday==="sat"||weekday==="sun")return "offday";const hm=now.slice(11,16);if((hm>="09:30"&&hm<="11:30")||(hm>="13:00"&&hm<="15:00"))return "open";if(hm>"11:30"&&hm<"13:00")return "lunch";return hm>="15:00"?"closed":"preopen";};
   function toast(message,isError=false){const el=$("toast");el.textContent=message;el.className=`toast show${isError?" error":""}`;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className="toast",3800);}
-  async function loadDashboard(){const [r,s]=await Promise.all([fetch("/api/dashboard",{cache:"no-store"}),fetch(`/api/pool-stats?days=${statsDays}`,{cache:"no-store"})]);if(!r.ok)throw new Error(`数据读取失败（${r.status}）`);dashboard=await r.json();if(!dashboard.etfs?.length)throw new Error(dashboard.error||"暂无 ETF 行情数据");if(s.ok){const data=await s.json();poolStats=data.rows||[];}else poolStats=[];render();}
-  function render(){renderStatus();renderSummary();renderPoolCharts();renderPoolStats();renderTable();}
+  async function loadDashboard(){const [r,s,o]=await Promise.all([fetch("/api/dashboard",{cache:"no-store"}),fetch(`/api/pool-stats?days=${statsDays}`,{cache:"no-store"}),fetch("/api/flow-overview",{cache:"no-store"})]);if(!r.ok)throw new Error(`数据读取失败（${r.status}）`);dashboard=await r.json();if(!dashboard.etfs?.length)throw new Error(dashboard.error||"暂无 ETF 行情数据");if(s.ok){const data=await s.json();poolStats=data.rows||[];}else poolStats=[];if(o.ok)flowOverview=await o.json();else flowOverview=null;render();}
+  function render(){renderStatus();renderSummary();renderFlowOverview();renderPoolCharts();renderPoolStats();renderTable();}
+  function renderFlowOverview(){
+    const data=flowOverview,cards=$("flow-metric-cards");
+    if(!data?.metrics?.length){$("flow-overview-date").textContent="暂无完整金额数据";$("flow-overview-meta").textContent="等待份额与价格数据完整";cards.innerHTML='<div class="flow-metric-card flow-metric-loading">当前没有满足完整口径的交易日数据</div>';$("flow-index-rows").innerHTML='<tr><td colspan="8" class="empty-row">暂无完整数据</td></tr>';$("flow-etf-rows").innerHTML='<tr><td colspan="8" class="empty-row">暂无完整数据</td></tr>';return;}
+    $("flow-overview-date").textContent=`最新完整交易日 ${dateLabel(data.as_of_date)}`;$("flow-overview-meta").textContent=`核心观察池 ${data.core_count} 只 · 金额单位：亿元`;
+    cards.innerHTML=data.metrics.map(metric=>{const value=Number(metric.value_yi)||0,action=value>0?"净买入":value<0?"净卖出":"买卖接近",cls=tone(value);const suffix=metric.key==="latest"?dateLabel(metric.as_of_date):`${number(metric.trading_days,0)}个交易日`;return `<article class="flow-metric-card ${cls}"><span>${esc(metric.label)}（${esc(suffix)}）</span><strong>${signed(value,2)}</strong><small>${action} 亿元</small></article>`;}).join("");
+    const valueCell=value=>`<td class="right money ${tone(value)}">${signed(value,2)}</td>`;
+    $("flow-index-rows").innerHTML=(data.indexes||[]).map(row=>`<tr><td><b>${esc(row.index_name)}</b></td><td class="right">${number(row.etf_count,0)}</td><td class="right money">${number(row.shares_yi,1)}</td><td class="right money">${row.reported_huijin_count?number(row.reported_huijin_yi,1):"—"}${row.reported_huijin_count&&row.reported_huijin_count<row.etf_count?`<small class="subnote">${row.reported_huijin_count}/${row.etf_count}只已披露</small>`:""}</td>${valueCell(row.latest_yi)}${valueCell(row.week_yi)}${valueCell(row.month_yi)}${valueCell(row.ytd_yi)}</tr>`).join("")||'<tr><td colspan="8" class="empty-row">暂无品种汇总</td></tr>';
+    $("flow-etf-rows").innerHTML=(data.etfs||[]).map(row=>`<tr><td><div class="flow-etf-label"><b>${esc(row.name)}</b><small>${esc(row.code)}</small></div></td><td>${esc(row.index_name)}</td><td class="right money">${number(row.shares_yi,1)}</td><td class="right money">${row.huijin_yi==null?"—":number(row.huijin_yi,1)}</td>${valueCell(row.latest_yi)}${valueCell(row.week_yi)}${valueCell(row.month_yi)}${valueCell(row.ytd_yi)}</tr>`).join("")||'<tr><td colspan="8" class="empty-row">暂无 ETF 明细</td></tr>';
+    const dates=data.recent_dates||[],rank=new Map((data.etfs||[]).map((row,index)=>[row.code,index])),matrix=[...(data.daily_matrix||[])].sort((a,b)=>(rank.get(a.code)??999)-(rank.get(b.code)??999));
+    $("flow-daily-head").innerHTML=`<tr><th>ETF</th><th>跟踪指数</th>${dates.map(date=>`<th class="right">${esc(shortDate(date))}</th>`).join("")}</tr>`;
+    $("flow-daily-rows").innerHTML=matrix.map(row=>`<tr><td><b>${esc(row.name)}</b><small class="flow-matrix-code">${esc(row.code)}</small></td><td>${esc(row.index_name)}</td>${(row.values||[]).map(value=>`<td class="right money ${value==null?"neutral":tone(value)}">${value==null?"—":signed(value,2)}</td>`).join("")}</tr>`).join("")||'<tr><td colspan="12" class="empty-row">暂无逐日明细</td></tr>';
+    $("flow-overview-method").textContent=`估算口径：${data.method||"份额变化 × 当日价格"} ${data.holding_note||""}`;
+  }
   function renderStatus(){
     const run=dashboard.latest_run,newest=dashboard.etfs[0];
     const cloud=dashboard.runtime==="cloudflare";
@@ -52,8 +66,8 @@
     const ready=Number(s.amount_yi)>0&&Number(s.avg20_yi)>0;
     $("signal-title").textContent=!ready?"等待当日成交数据":ratio>=1.8?"观察到资金活跃迹象":ratio>=1.3?"成交有所活跃，方向待观察":"暂未看到明显介入迹象";
     $("signal-copy").textContent=ready?`核心池成交额约为历史同时点基线的 ${number(ratio,2)} 倍。份额与成交方向都是代理信号，不能确认具体交易账户。`:"当日成交数据尚未齐备，暂不生成资金活跃判断。";
-    $("signal-scope").textContent=`重点池 ${s.core_count||20} 只`;
-    $("scope-label").textContent=`${s.core_count||20} 只宽基 · ${Math.max(0,(s.total_count||24)-(s.core_count||20))} 只扩展`;
+    $("signal-scope-count").textContent=number(s.core_count||34,0);
+    $("scope-label").textContent=`${s.core_count||34} 只宽基 · ${Math.max(0,(s.total_count||35)-(s.core_count||34))} 只扩展`;
     $("today-signal-meter").style.width=`${Math.min(100,Math.max(0,ratio/2.5*100))}%`;
     $("metric-ratio").textContent=`${number(s.ratio,2)}×`;$("metric-ratio-note").textContent=`${number((s.progress||0)*100,0)}% 历史成交进度已完成`;$("ratio-meter").style.width=`${Math.min(100,Math.max(0,(Number(s.ratio)||0)/2.5*100))}%`;
     $("metric-amount").textContent=`${number(s.amount_yi,1)} 亿`;$("metric-avg").textContent=`20 日均额 ${number(s.avg20_yi,1)} 亿`;
@@ -151,15 +165,18 @@
   }
   function renderPoolCharts(){renderFlowChart();renderIndexChart();}
   function renderPoolStats(){
-    if(!poolStats.length){$("pool-stats-rows").innerHTML='<tr><td colspan="7" class="empty-row">所选区间暂无完整的汪汪队份额记录</td></tr>';$("pool-stats-count").textContent="0 个交易日";return;}
+    if(!poolStats.length){$("pool-stats-rows").innerHTML='<tr><td colspan="8" class="empty-row">所选区间暂无完整的汪汪队份额记录</td></tr>';$("pool-stats-count").textContent="0 个交易日";return;}
     const rows=[...poolStats].reverse();
     $("pool-stats-rows").innerHTML=rows.map(row=>{
       const delta=Number(row.shares_change_yi)||0,changeClass=delta>0?"flow-up":delta<0?"flow-down":"flow-flat";
       const buyText=row.buy_amount_yi==null?"—":`${number(row.buy_amount_yi,2)} 亿`;
       const sellText=row.sell_amount_yi==null?"—":`${number(row.sell_amount_yi,2)} 亿`;
+      const netAmount=row.buy_amount_yi==null||row.sell_amount_yi==null?null:Number(row.buy_amount_yi)-Number(row.sell_amount_yi);
+      const netClass=netAmount==null?"net-unknown":netAmount>0?"net-buy":netAmount<0?"net-sell":"net-flat";
+      const netText=netAmount==null?"—":`${signed(netAmount,2)} 亿`;
       const signal=delta>0?"估算净申购":delta<0?"估算净赎回":"份额持平";
       const turnover=row.turnover_multiple==null?"—":`${number(row.turnover_multiple,1)}×`;
-      return `<tr class="stats-row ${changeClass}" data-date="${esc(row.date)}" tabindex="0" role="button" title="点击查看 ${shortDate(row.date)} 的 ETF 明细"><td class="stats-date">${esc(shortDate(row.date))}</td><td>${esc(row.pool_name)}</td><td class="right stats-tinted">${signed(delta,2)} 亿份</td><td class="right stats-buy ${Number(row.buy_amount_yi)>0?"active":""}">${buyText}</td><td class="right stats-sell ${Number(row.sell_amount_yi)>0?"active":""}">${sellText}</td><td class="right">${turnover}</td><td><span class="signal-tag">${signal}</span></td></tr>`;
+      return `<tr class="stats-row ${changeClass}" data-date="${esc(row.date)}" tabindex="0" role="button" title="点击查看 ${shortDate(row.date)} 的 ETF 明细"><td class="stats-date">${esc(shortDate(row.date))}</td><td>${esc(row.pool_name)}</td><td class="right stats-tinted">${signed(delta,2)} 亿份</td><td class="right stats-buy ${Number(row.buy_amount_yi)>0?"active":""}">${buyText}</td><td class="right stats-sell ${Number(row.sell_amount_yi)>0?"active":""}">${sellText}</td><td class="right stats-net ${netClass}" title="买入总金额估算减去赎回总金额估算">${netText}</td><td class="right">${turnover}</td><td><span class="signal-tag">${signal}</span></td></tr>`;
     }).join("");
     $("pool-stats-count").textContent=`最近 ${rows.length} 个交易日 · 金额与成交量单位见列名`;
   }
