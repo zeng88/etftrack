@@ -14,7 +14,6 @@ TABLES = {
     "daily_activity": ("trade_date,code,amount_yi,volume_lots,shape_json,tail_ratio,complete", "trade_date,code"),
     "daily_closes": ("trade_date,code,close_price,volume_lots,turnover_yi,source", "trade_date,code"),
     "daily_snapshots": ("trade_date,code,payload_json,source_ts,source", "trade_date,code"),
-    "collection_runs": ("id,started_at,finished_at,status,trade_date,message,source", "id"),
     "app_meta": ("key,value", "key"),
 }
 

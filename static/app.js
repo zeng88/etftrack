@@ -9,6 +9,7 @@
   let selectedFlowDate = null;
   let currentFlowDetail = null;
   let toastTimer = null;
+  let dashboardRefreshBusy = false;
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const number = (v,d=1) => Number.isFinite(Number(v)) ? Number(v).toLocaleString("zh-CN",{minimumFractionDigits:d,maximumFractionDigits:d}) : "—";
   const signed = (v,d=1) => `${Number(v)>0?"+":Number(v)<0?"−":""}${number(Math.abs(Number(v)||0),d)}`;
@@ -22,7 +23,7 @@
   const marketPhase = now => {const weekday=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Shanghai",weekday:"short"}).format(new Date()).toLowerCase();if(weekday==="sat"||weekday==="sun")return "offday";const hm=now.slice(11,16);if((hm>="09:30"&&hm<="11:30")||(hm>="13:00"&&hm<="15:00"))return "open";if(hm>"11:30"&&hm<"13:00")return "lunch";return hm>="15:00"?"closed":"preopen";};
   function toast(message,isError=false){const el=$("toast");el.textContent=message;el.className=`toast show${isError?" error":""}`;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className="toast",3800);}
   async function loadDashboard(){const [r,s,o]=await Promise.all([fetch("/api/dashboard",{cache:"no-store"}),fetch(`/api/pool-stats?days=${statsDays}`,{cache:"no-store"}),fetch("/api/flow-overview",{cache:"no-store"})]);if(!r.ok)throw new Error(`数据读取失败（${r.status}）`);dashboard=await r.json();if(!dashboard.etfs?.length)throw new Error(dashboard.error||"暂无 ETF 行情数据");if(s.ok){const data=await s.json();poolStats=data.rows||[];}else poolStats=[];if(o.ok)flowOverview=await o.json();else flowOverview=null;if(liveFlow)applyLiveQuotes(liveFlow,false);render();}
-  function render(){renderStatus();renderSummary();renderFlowOverview();renderPoolCharts();renderPoolStats();renderTable();}
+  function render(){renderStatus();renderSummary();renderFlowOverview();renderPoolCharts();renderPoolStats();renderTable();if(liveFlow)renderLiveFlow();}
   function renderFlowOverview(){
     const data=flowOverview,cards=$("flow-metric-cards");
     if(!data?.metrics?.length){$("flow-overview-date").textContent="暂无完整金额数据";$("flow-overview-meta").textContent="等待份额与价格数据完整";cards.innerHTML='<div class="flow-metric-card flow-metric-loading">当前没有满足完整口径的交易日数据</div>';$("flow-index-rows").innerHTML='<tr><td colspan="8" class="empty-row">暂无完整数据</td></tr>';$("flow-etf-rows").innerHTML='<tr><td colspan="8" class="empty-row">暂无完整数据</td></tr>';return;}
@@ -119,10 +120,18 @@
         source_ts:quote.ts||data.time,source_name:"腾讯实时行情",hist};
     });
     if(data.date)dashboard.trade_date=data.date;
+    const core=dashboard.etfs.filter(item=>item.group==="core");
+    const amount=core.reduce((sum,item)=>sum+Math.max(Number(item.amount_yi)||0,0),0);
+    const cap=core.reduce((sum,item)=>sum+Math.max(Number(item.mktcap_yi)||0,0),0);
+    const weightedPct=cap?core.reduce((sum,item)=>sum+(Number(item.pct)||0)*(Number(item.mktcap_yi)||0),0)/cap:0;
+    const activeNet=core.reduce((sum,item)=>{const outer=Math.max(Number(item.outer_lots)||0,0),inner=Math.max(Number(item.inner_lots)||0,0),total=outer+inner;return sum+(total?((outer-inner)/total)*(Number(item.amount_yi)||0):0);},0);
+    const stampDigits=String(data.time||""),minute=/^\d{14}$/.test(stampDigits)?Number(stampDigits.slice(8,10))*60+Number(stampDigits.slice(10,12)):0;
+    const progress=Math.max(.01,Math.min(1,minute<570?0.01:minute<=690?(minute-570)/240:minute<780?0.5:minute<=900?0.5+(minute-780)/240:1));
+    const summary=dashboard.summary||{};dashboard.summary={...summary,amount_yi:amount,weighted_pct:weightedPct,active_net_yi:Number(data.net_yi)||activeNet,progress,ratio:summary.avg20_yi?amount/(Number(summary.avg20_yi)*progress):0};
     const stamp=data.time?timeLabel(data.time):"行情时间暂缺";
     const count=Number(data.quote_count)||data.items.length,total=Number(data.total_count)||dashboard.etfs.length;
     $("watchlist-update-time").textContent=`行情源 ${stamp} · ${count}/${total} 只更新；份额按交易所披露`;
-    if(redraw){renderStatus();renderTable();}
+    if(redraw){renderStatus();renderSummary();renderTable();}
   }
   async function refreshLiveFlow(){
     if(liveRefreshBusy)return;
@@ -224,4 +233,7 @@
   loadDashboard().then(()=>refreshNow(true)).catch(e=>{$("signal-title").textContent="数据暂时不可用";$("signal-copy").textContent=e.message;$("etf-rows").innerHTML=`<tr><td colspan="10" class="empty-row">${esc(e.message)}</td></tr>`;toast(e.message,true);});
   refreshLiveFlow();
   setInterval(refreshLiveFlow,20000);
+  const refreshPersistedData=async()=>{if(document.hidden||dashboardRefreshBusy)return;dashboardRefreshBusy=true;try{await loadDashboard();}catch(error){console.warn("定时读取统计数据失败",error);}finally{dashboardRefreshBusy=false;}};
+  setInterval(refreshPersistedData,60000);
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden){refreshPersistedData();refreshLiveFlow();}});
 })();

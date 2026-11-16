@@ -315,7 +315,7 @@ def _history_baselines(conn: sqlite3.Connection, code: str, date: str, clock: st
 
 def _previous_shares(conn: sqlite3.Connection, code: str, date: str) -> tuple[float | None, str | None]:
     row = conn.execute(
-        "SELECT shares,trade_date FROM share_history WHERE code=? AND trade_date<? ORDER BY trade_date DESC LIMIT 1",
+        "SELECT shares,trade_date FROM share_history WHERE code=? AND trade_date<? AND source<>'腾讯行情份额字段' ORDER BY trade_date DESC LIMIT 1",
         (code, date),
     ).fetchone()
     return (float(row["shares"]), row["trade_date"]) if row else (None, None)

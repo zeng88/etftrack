@@ -183,7 +183,7 @@ def load_dashboard(code: str = "510300", days: int = 30) -> dict[str, Any]:
         aggregate_rows = conn.execute(
             """SELECT h.trade_date,h.code,h.shares,h.source
                FROM share_history h
-               WHERE h.code IN (SELECT code FROM etfs WHERE group_name='core')
+               WHERE h.code IN (SELECT code FROM etfs WHERE group_name='core') AND h.source <> '腾讯行情份额字段'
                ORDER BY h.trade_date,h.code"""
         ).fetchall()
         by_date: dict[str, dict[str, float]] = {}
@@ -253,7 +253,7 @@ def load_flow_detail(trade_date: str) -> dict[str, Any]:
                JOIN share_history h ON h.code=e.code AND h.trade_date=?
                LEFT JOIN share_history prev ON prev.code=e.code AND prev.trade_date=(
                    SELECT MAX(p.trade_date) FROM share_history p
-                   WHERE p.code=e.code AND p.trade_date<h.trade_date
+                   WHERE p.code=e.code AND p.trade_date<h.trade_date AND p.source <> '腾讯行情份额字段'
                )
                LEFT JOIN daily_activity a ON a.code=e.code AND a.trade_date=h.trade_date
                LEFT JOIN daily_closes c ON c.code=e.code AND c.trade_date=h.trade_date
@@ -336,7 +336,7 @@ def load_pool_statistics(days: int = 20) -> list[dict[str, Any]]:
         core_codes = [row[0] for row in conn.execute("SELECT code FROM etfs WHERE group_name='core' ORDER BY code")]
         histories = conn.execute(
             """SELECT trade_date,code,shares,source FROM share_history
-               WHERE code IN (SELECT code FROM etfs WHERE group_name='core') ORDER BY trade_date,code"""
+               WHERE code IN (SELECT code FROM etfs WHERE group_name='core') AND source <> '腾讯行情份额字段' ORDER BY trade_date,code"""
         ).fetchall()
         deltas_by_date: dict[str, dict[str, float]] = {}
         unconfirmed_dates: set[str] = set()
@@ -436,7 +436,7 @@ def load_flow_overview() -> dict[str, Any]:
 
         histories = conn.execute(
             """SELECT trade_date,code,shares,source FROM share_history
-               WHERE code IN (SELECT code FROM etfs WHERE group_name='core') ORDER BY trade_date,code"""
+               WHERE code IN (SELECT code FROM etfs WHERE group_name='core') AND source <> '腾讯行情份额字段' ORDER BY trade_date,code"""
         ).fetchall()
         prices_rows = conn.execute(
             """SELECT trade_date,code,close_price FROM daily_closes

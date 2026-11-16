@@ -35,7 +35,7 @@ export async function loadDashboard(db: D1Database) {
   const verdict = ratio>=1.8 && flow_yi>0 ? "成交放量，份额估算偏流入" : ratio>=1.3 ? "成交较活跃，方向仍需观察" : "暂未看到明显放量";
   const history = await db.prepare(`
     SELECT h.trade_date,h.code,h.shares,h.source,e.group_name FROM share_history h JOIN etfs e ON e.code=h.code
-    WHERE e.group_name='core' ORDER BY h.trade_date,h.code
+    WHERE e.group_name='core' AND h.source <> '腾讯行情份额字段' ORDER BY h.trade_date,h.code
   `).all<{trade_date:string;code:string;shares:number;source:string;group_name:string}>();
   const codes = core.map(item => String(item.code));
   const byDate = new Map<string,Map<string,number>>(), unconfirmed = new Set<string>(), firstSeen = new Map<string,string>();
@@ -73,7 +73,7 @@ export async function loadFlowDetail(db: D1Database, date: string) {
     SELECT e.code,e.name,h.shares,prev.shares AS prev_shares,a.amount_yi,a.volume_lots,h.source,c.close_price,snap.payload_json AS snapshot_payload
     FROM etfs e JOIN share_history h ON h.code=e.code AND h.trade_date=?
     LEFT JOIN share_history prev ON prev.code=e.code AND prev.trade_date=(
-      SELECT MAX(p.trade_date) FROM share_history p WHERE p.code=e.code AND p.trade_date<h.trade_date)
+      SELECT MAX(p.trade_date) FROM share_history p WHERE p.code=e.code AND p.trade_date<h.trade_date AND p.source <> '腾讯行情份额字段')
     LEFT JOIN daily_activity a ON a.code=e.code AND a.trade_date=h.trade_date
     LEFT JOIN daily_closes c ON c.code=e.code AND c.trade_date=h.trade_date
     LEFT JOIN daily_snapshots snap ON snap.code=e.code AND snap.trade_date=h.trade_date
@@ -103,7 +103,7 @@ export async function loadFlowDetail(db: D1Database, date: string) {
 export async function loadPoolStatistics(db: D1Database, days: number) {
   const [coreRows,histRows,activityRows,closeRows,snapshotRows] = await Promise.all([
     db.prepare("SELECT code FROM etfs WHERE group_name='core' ORDER BY code").all<{code:string}>(),
-    db.prepare("SELECT trade_date,code,shares,source FROM share_history WHERE code IN (SELECT code FROM etfs WHERE group_name='core') ORDER BY trade_date,code").all<{trade_date:string;code:string;shares:number;source:string}>(),
+    db.prepare("SELECT trade_date,code,shares,source FROM share_history WHERE code IN (SELECT code FROM etfs WHERE group_name='core') AND source <> '腾讯行情份额字段' ORDER BY trade_date,code").all<{trade_date:string;code:string;shares:number;source:string}>(),
     db.prepare("SELECT trade_date,code,amount_yi,volume_lots FROM daily_activity WHERE code IN (SELECT code FROM etfs WHERE group_name='core') ORDER BY trade_date").all<{trade_date:string;code:string;amount_yi:number|null;volume_lots:number|null}>(),
     db.prepare("SELECT trade_date,code,close_price FROM daily_closes WHERE code IN (SELECT code FROM etfs WHERE group_name='core') ORDER BY trade_date").all<{trade_date:string;code:string;close_price:number}>(),
     db.prepare("SELECT trade_date,code,payload_json FROM daily_snapshots WHERE trade_date=(SELECT MAX(trade_date) FROM daily_snapshots)").all<{trade_date:string;code:string;payload_json:string}>(),
@@ -132,7 +132,7 @@ export async function loadPoolStatistics(db: D1Database, days: number) {
 export async function loadFlowOverview(db: D1Database) {
   const [etfRows,historyRows,closeRows,snapshotRows]=await Promise.all([
     db.prepare("SELECT code,name,index_name,huijin_yi FROM etfs WHERE group_name='core' ORDER BY code").all<{code:string;name:string;index_name:string;huijin_yi:number|null}>(),
-    db.prepare("SELECT trade_date,code,shares,source FROM share_history WHERE code IN (SELECT code FROM etfs WHERE group_name='core') ORDER BY trade_date,code").all<{trade_date:string;code:string;shares:number;source:string}>(),
+    db.prepare("SELECT trade_date,code,shares,source FROM share_history WHERE code IN (SELECT code FROM etfs WHERE group_name='core') AND source <> '腾讯行情份额字段' ORDER BY trade_date,code").all<{trade_date:string;code:string;shares:number;source:string}>(),
     db.prepare("SELECT trade_date,code,close_price FROM daily_closes WHERE code IN (SELECT code FROM etfs WHERE group_name='core') ORDER BY trade_date,code").all<{trade_date:string;code:string;close_price:number}>(),
     db.prepare("SELECT trade_date,code,payload_json FROM daily_snapshots WHERE trade_date=(SELECT MAX(trade_date) FROM daily_snapshots)").all<{trade_date:string;code:string;payload_json:string}>(),
   ]);

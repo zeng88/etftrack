@@ -28,11 +28,14 @@ export async function fetchLiveFlow(db:D1Database){
   const quotes=decodeTencent(raw);
   const core=results.filter(r=>r.group_name==="core"),missingCore=core.filter(r=>!quotes.has(r.code));
   if(missingCore.length)throw new Error(`实时行情覆盖不完整，缺少 ${missingCore.length} 只重点 ETF`);
+  const coreDates=new Set(core.map(row=>String(quotes.get(row.code)?.date||"")));
+  if(coreDates.size!==1||![...coreDates][0])throw new Error("重点 ETF 行情日期不一致，本轮估算暂不更新");
+  const tradeDate=[...coreDates][0];
   let buy=0,sell=0,amount=0;const stamps:string[]=[];
   for(const row of core){const q=quotes.get(row.code)!;const a=Math.max(Number(q.amount_yi)||0,0),outer=Math.max(Number(q.outer_lots)||0,0),inner=Math.max(Number(q.inner_lots)||0,0),total=outer+inner,net=total?a*(outer-inner)/total:0;buy+=(a+net)/2;sell+=(a-net)/2;amount+=a;stamps.push(String(q.ts));}
   const time=stamps.sort().at(-1)!;
-  const items=results.flatMap(row=>{const quote=quotes.get(row.code);return quote?[{...quote,group:row.group_name}]:[];});
-  return {date:time.slice(0,8),time,core_count:core.length,quote_count:items.length,total_count:results.length,items,buy_yi:+buy.toFixed(4),sell_yi:+sell.toFixed(4),net_yi:+(buy-sell).toFixed(4),amount_yi:+amount.toFixed(4),source:"腾讯公开行情内外盘估算"};
+  const items=results.flatMap(row=>{const quote=quotes.get(row.code);return quote&&String(quote.date)===tradeDate?[{...quote,group:row.group_name}]:[];});
+  return {date:tradeDate,time,core_count:core.length,quote_count:items.length,total_count:results.length,items,buy_yi:+buy.toFixed(4),sell_yi:+sell.toFixed(4),net_yi:+(buy-sell).toFixed(4),amount_yi:+amount.toFixed(4),source:"腾讯公开行情内外盘估算"};
 }
 
 function shanghaiDate(time:number){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(time)).replaceAll("-","");}
@@ -50,7 +53,7 @@ export async function collectConfirmedDaily(env:Env, timestamp:number){
     // the previous trading session. Use the quote's trading date for all rows.
     const date=[...quoteDates][0],dateISO=`${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}`;
     const complete=await env.DB.prepare(`SELECT s.trade_date FROM share_history s JOIN etfs e ON e.code=s.code
-      WHERE e.group_name='core' GROUP BY s.trade_date HAVING COUNT(DISTINCT s.code)=? ORDER BY s.trade_date DESC LIMIT 1`)
+      WHERE e.group_name='core' AND s.source <> '腾讯行情份额字段' GROUP BY s.trade_date HAVING COUNT(DISTINCT s.code)=? ORDER BY s.trade_date DESC LIMIT 1`)
       .bind(core.length).first<{trade_date:string}>();
     const currentCoverage=await env.DB.prepare(`SELECT COUNT(DISTINCT s.code) AS count FROM share_history s JOIN etfs e ON e.code=s.code
       WHERE s.trade_date=? AND e.group_name='core' AND s.source IN ('上交所 ETF 规模披露','深交所 ETF 规模披露')`)
@@ -86,7 +89,10 @@ export async function collectConfirmedDaily(env:Env, timestamp:number){
     }
     const official=officialByDate.get(date)||new Map<string,{shares:number;source:string}>();
     const full=currentAlreadyComplete||officialByDate.has(date);
-    const prevRows=await env.DB.prepare("SELECT code,shares FROM share_history WHERE trade_date=(SELECT MAX(trade_date) FROM share_history)").all<{code:string;shares:number}>();
+    const prevRows=await env.DB.prepare(`SELECT s.code,s.shares FROM share_history s JOIN (
+      SELECT code,MAX(trade_date) AS trade_date FROM share_history
+      WHERE trade_date<? AND source <> '腾讯行情份额字段' GROUP BY code
+    ) p ON p.code=s.code AND p.trade_date=s.trade_date WHERE s.source <> '腾讯行情份额字段'`).bind(date).all<{code:string;shares:number}>();
     const previous=new Map((prevRows.results||[]).map(r=>[r.code,Number(r.shares)]));
     const stmts=[];
     for(const [retryDate,rows] of officialByDate){for(const etf of core){const x=rows.get(etf.code)!;stmts.push(env.DB.prepare("INSERT OR REPLACE INTO share_history(trade_date,code,shares,observed_at,source) VALUES(?,?,?,?,?)").bind(retryDate,etf.code,x.shares,new Date().toISOString(),x.source));}}
