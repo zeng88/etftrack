@@ -84,7 +84,7 @@ def fetch_live_flow(path: str | None = None) -> dict[str, Any]:
     conn = connect(path or DB_PATH)
     try:
         etfs = [dict(row) for row in conn.execute(
-            "SELECT code,tcode,name FROM etfs WHERE group_name='core' ORDER BY code"
+            "SELECT code,tcode,name,group_name FROM etfs ORDER BY code"
         )]
     finally:
         conn.close()
@@ -92,13 +92,15 @@ def fetch_live_flow(path: str | None = None) -> dict[str, Any]:
         raise RuntimeError("重点 ETF 名单为空")
 
     quotes = fetch_quotes(etfs)
-    missing = sorted({item["code"] for item in etfs} - set(quotes))
+    core_etfs = [item for item in etfs if item["group_name"] == "core"]
+    missing = sorted({item["code"] for item in core_etfs} - set(quotes))
     if missing:
-        raise RuntimeError(f"实时行情覆盖不完整，缺少 {len(missing)} 只 ETF")
+        raise RuntimeError(f"实时行情覆盖不完整，缺少 {len(missing)} 只重点 ETF")
 
     buy_yi = sell_yi = amount_yi = 0.0
     stamps = []
-    for quote in quotes.values():
+    for item in core_etfs:
+        quote = quotes[item["code"]]
         amount = max(float(quote.get("amount_yi") or 0), 0.0)
         outer = max(float(quote.get("outer_lots") or 0), 0.0)
         inner = max(float(quote.get("inner_lots") or 0), 0.0)
@@ -111,8 +113,11 @@ def fetch_live_flow(path: str | None = None) -> dict[str, Any]:
         amount_yi += amount
         stamps.append(quote["ts"])
     stamp = max(stamps)
+    live_items = [{**quotes[item["code"]], "group": item["group_name"]}
+                  for item in etfs if item["code"] in quotes]
     return {
-        "date": stamp[:8], "time": stamp, "core_count": len(etfs),
+        "date": stamp[:8], "time": stamp, "core_count": len(core_etfs),
+        "quote_count": len(live_items), "total_count": len(etfs), "items": live_items,
         "buy_yi": round(buy_yi, 4), "sell_yi": round(sell_yi, 4),
         "net_yi": round(buy_yi - sell_yi, 4), "amount_yi": round(amount_yi, 4),
         "source": "腾讯公开行情内外盘估算",

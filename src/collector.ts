@@ -22,15 +22,17 @@ async function getText(url:string,referer="",timeoutMs=18000){
 }
 
 export async function fetchLiveFlow(db:D1Database){
-  const {results=[]}=await db.prepare("SELECT code,tcode,name FROM etfs WHERE group_name='core' ORDER BY code").all<{code:string;tcode:string;name:string}>();
+  const {results=[]}=await db.prepare("SELECT code,tcode,name,group_name FROM etfs ORDER BY code").all<{code:string;tcode:string;name:string;group_name:string}>();
   if(!results.length)throw new Error("重点 ETF 名单为空");
   const raw=await getText(QUOTE_URL+results.map(r=>r.tcode).join(","));
-  const quotes=decodeTencent(raw),missing=results.filter(r=>!quotes.has(r.code));
-  if(missing.length)throw new Error(`实时行情覆盖不完整，缺少 ${missing.length} 只 ETF`);
+  const quotes=decodeTencent(raw);
+  const core=results.filter(r=>r.group_name==="core"),missingCore=core.filter(r=>!quotes.has(r.code));
+  if(missingCore.length)throw new Error(`实时行情覆盖不完整，缺少 ${missingCore.length} 只重点 ETF`);
   let buy=0,sell=0,amount=0;const stamps:string[]=[];
-  for(const row of results){const q=quotes.get(row.code)!;const a=Math.max(Number(q.amount_yi)||0,0),outer=Math.max(Number(q.outer_lots)||0,0),inner=Math.max(Number(q.inner_lots)||0,0),total=outer+inner,net=total?a*(outer-inner)/total:0;buy+=(a+net)/2;sell+=(a-net)/2;amount+=a;stamps.push(String(q.ts));}
+  for(const row of core){const q=quotes.get(row.code)!;const a=Math.max(Number(q.amount_yi)||0,0),outer=Math.max(Number(q.outer_lots)||0,0),inner=Math.max(Number(q.inner_lots)||0,0),total=outer+inner,net=total?a*(outer-inner)/total:0;buy+=(a+net)/2;sell+=(a-net)/2;amount+=a;stamps.push(String(q.ts));}
   const time=stamps.sort().at(-1)!;
-  return {date:time.slice(0,8),time,core_count:results.length,buy_yi:+buy.toFixed(4),sell_yi:+sell.toFixed(4),net_yi:+(buy-sell).toFixed(4),amount_yi:+amount.toFixed(4),source:"腾讯公开行情内外盘估算"};
+  const items=results.flatMap(row=>{const quote=quotes.get(row.code);return quote?[{...quote,group:row.group_name}]:[];});
+  return {date:time.slice(0,8),time,core_count:core.length,quote_count:items.length,total_count:results.length,items,buy_yi:+buy.toFixed(4),sell_yi:+sell.toFixed(4),net_yi:+(buy-sell).toFixed(4),amount_yi:+amount.toFixed(4),source:"腾讯公开行情内外盘估算"};
 }
 
 function shanghaiDate(time:number){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(time)).replaceAll("-","");}

@@ -21,7 +21,7 @@
   const shanghaiNow = () => new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).format(new Date());
   const marketPhase = now => {const weekday=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Shanghai",weekday:"short"}).format(new Date()).toLowerCase();if(weekday==="sat"||weekday==="sun")return "offday";const hm=now.slice(11,16);if((hm>="09:30"&&hm<="11:30")||(hm>="13:00"&&hm<="15:00"))return "open";if(hm>"11:30"&&hm<"13:00")return "lunch";return hm>="15:00"?"closed":"preopen";};
   function toast(message,isError=false){const el=$("toast");el.textContent=message;el.className=`toast show${isError?" error":""}`;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className="toast",3800);}
-  async function loadDashboard(){const [r,s,o]=await Promise.all([fetch("/api/dashboard",{cache:"no-store"}),fetch(`/api/pool-stats?days=${statsDays}`,{cache:"no-store"}),fetch("/api/flow-overview",{cache:"no-store"})]);if(!r.ok)throw new Error(`数据读取失败（${r.status}）`);dashboard=await r.json();if(!dashboard.etfs?.length)throw new Error(dashboard.error||"暂无 ETF 行情数据");if(s.ok){const data=await s.json();poolStats=data.rows||[];}else poolStats=[];if(o.ok)flowOverview=await o.json();else flowOverview=null;render();}
+  async function loadDashboard(){const [r,s,o]=await Promise.all([fetch("/api/dashboard",{cache:"no-store"}),fetch(`/api/pool-stats?days=${statsDays}`,{cache:"no-store"}),fetch("/api/flow-overview",{cache:"no-store"})]);if(!r.ok)throw new Error(`数据读取失败（${r.status}）`);dashboard=await r.json();if(!dashboard.etfs?.length)throw new Error(dashboard.error||"暂无 ETF 行情数据");if(s.ok){const data=await s.json();poolStats=data.rows||[];}else poolStats=[];if(o.ok)flowOverview=await o.json();else flowOverview=null;if(liveFlow)applyLiveQuotes(liveFlow,false);render();}
   function render(){renderStatus();renderSummary();renderFlowOverview();renderPoolCharts();renderPoolStats();renderTable();}
   function renderFlowOverview(){
     const data=flowOverview,cards=$("flow-metric-cards");
@@ -105,14 +105,33 @@
     $("refresh-status").querySelector("span").textContent=`估算已更新 ${localClock()}`;
   }
   let liveRefreshBusy=false;
+  function applyLiveQuotes(data,redraw=true){
+    if(!dashboard?.etfs?.length||!Array.isArray(data?.items))return;
+    const quotes=new Map(data.items.map(item=>[String(item.code),item]));
+    dashboard.etfs=dashboard.etfs.map(item=>{
+      const quote=quotes.get(String(item.code));if(!quote)return item;
+      const hist=[...(item.hist||[])],quoteDate=String(quote.date||"").replaceAll("-","");
+      if(quoteDate&&Number.isFinite(Number(quote.amount_yi))){
+        const index=hist.findIndex(point=>String(point.date||"").replaceAll("-","")===quoteDate),point={date:quoteDate,amount_yi:Number(quote.amount_yi)};
+        if(index>=0)hist[index]=point;else hist.push(point);hist.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+      }
+      return {...item,...quote,name:item.name,index:item.index,group:item.group,huijin_yi:item.huijin_yi,
+        source_ts:quote.ts||data.time,source_name:"腾讯实时行情",hist};
+    });
+    if(data.date)dashboard.trade_date=data.date;
+    const stamp=data.time?timeLabel(data.time):"行情时间暂缺";
+    const count=Number(data.quote_count)||data.items.length,total=Number(data.total_count)||dashboard.etfs.length;
+    $("watchlist-update-time").textContent=`行情源 ${stamp} · ${count}/${total} 只更新；份额按交易所披露`;
+    if(redraw){renderStatus();renderTable();}
+  }
   async function refreshLiveFlow(){
     if(liveRefreshBusy)return;
     liveRefreshBusy=true;
     try{
       const r=await fetch("/api/live-flow",{cache:"no-store"}),data=await r.json();
       if(!r.ok)throw new Error(data.error||"实时估算暂不可用");
-      liveFlow=data;renderLiveFlow();
-    }catch(e){$("signal-title").textContent="实时估算暂不可用";$("signal-copy").textContent="行情接口未能返回完整的重点 ETF 报价；保留的数值属于上次成功采集，不能视为当前买卖。";$("metric-active-note").textContent=`实时行情暂不可用 · ${localClock()}`;$("live-update-time").textContent="本轮采集失败";$("live-source").textContent=liveFlow?.time?`上次成功行情源 ${timeLabel(liveFlow.time)}`:"尚无成功行情记录";$("refresh-status").classList.add("offline");$("refresh-status").querySelector("span").textContent="实时估算连接失败";}finally{liveRefreshBusy=false;}
+      liveFlow=data;applyLiveQuotes(data);renderLiveFlow();
+    }catch(e){$("signal-title").textContent="实时估算暂不可用";$("signal-copy").textContent="行情接口未能返回完整的重点 ETF 报价；保留的数值属于上次成功采集，不能视为当前买卖。";$("metric-active-note").textContent=`实时行情暂不可用 · ${localClock()}`;$("live-update-time").textContent="本轮采集失败";$("live-source").textContent=liveFlow?.time?`上次成功行情源 ${timeLabel(liveFlow.time)}`:"尚无成功行情记录";$("watchlist-update-time").textContent=`实时行情暂不可用 · 保留上次报价（${localClock()} 检查失败）`;$("refresh-status").classList.add("offline");$("refresh-status").querySelector("span").textContent="实时估算连接失败";}finally{liveRefreshBusy=false;}
   }
   function pointsFor(days){const all=dashboard.history?.pool||[];return days>0?all.slice(-days):all;}
   function svgAxis(w,h,left,right,top,bottom,values,format){const innerH=h-top-bottom;return values.map((v,i)=>{const y=top+i/(values.length-1)*innerH;return `<line class="grid-line" x1="${left}" y1="${y}" x2="${w-right}" y2="${y}"/><text class="axis-label" x="2" y="${y+3}">${format(v)}</text>`;}).join("");}
@@ -192,7 +211,7 @@
     $("table-count").textContent=`显示 ${rows.length} / ${dashboard.etfs.length} 只 ETF`;
   }
   function calcRatio(i){const base=Number(i.avg20_yi)||0,progress=Number(i.day_progress)||1;return base>0?Number(i.amount_yi||0)/(base*Math.max(progress,.0001)):0;}
-  async function refreshNow(quiet=false){const button=$("refresh"),status=$("refresh-status");if(button.dataset.busy==="true")return;button.dataset.busy="true";button.disabled=true;button.querySelector("span").textContent="更新中…";status.classList.add("updating");status.querySelector("span").textContent="正在检查行情…";try{const r=await fetch("/api/update",{method:"POST"}),result=await r.json();await loadDashboard();if(result.status==="skipped"&&result.message==="已有更新任务运行中"){await new Promise(resolve=>setTimeout(resolve,1800));await loadDashboard();}if(result.status==="failed"){status.classList.add("offline");status.querySelector("span").textContent=`数据检查失败 · ${localClock()}`;}else{status.classList.remove("offline");status.querySelector("span").textContent=`数据检查完成 · ${localClock()}`;}if(!quiet)toast(result.message||"已完成",result.status==="failed");}catch(e){status.classList.add("offline");status.querySelector("span").textContent=`数据检查失败 · ${localClock()}`;if(!quiet)toast(e.message||"更新失败",true);}finally{button.dataset.busy="false";button.disabled=false;button.querySelector("span").textContent="立即更新";status.classList.remove("updating");}}
+  async function refreshNow(quiet=false){const button=$("refresh"),status=$("refresh-status");if(button.dataset.busy==="true")return;button.dataset.busy="true";button.disabled=true;button.querySelector("span").textContent="更新中…";status.classList.add("updating");status.querySelector("span").textContent="正在检查行情…";try{const r=await fetch("/api/update",{method:"POST"}),result=await r.json();if(result.live_flow){liveFlow=result.live_flow;applyLiveQuotes(liveFlow);renderLiveFlow();}await loadDashboard();if(result.status==="skipped"&&result.message==="已有更新任务运行中"){await new Promise(resolve=>setTimeout(resolve,1800));await loadDashboard();}if(result.status==="failed"){status.classList.add("offline");status.querySelector("span").textContent=`数据检查失败 · ${localClock()}`;}else{status.classList.remove("offline");status.querySelector("span").textContent=`数据检查完成 · ${localClock()}`;}if(!quiet)toast(result.message||"已完成",result.status==="failed");}catch(e){status.classList.add("offline");status.querySelector("span").textContent=`数据检查失败 · ${localClock()}`;if(!quiet)toast(e.message||"更新失败",true);}finally{button.dataset.busy="false";button.disabled=false;button.querySelector("span").textContent="立即更新";status.classList.remove("updating");}}
   $("refresh").addEventListener("click",()=>refreshNow(false));
   $("flow-chart").addEventListener("click",event=>{const hit=event.target.closest(".flow-hit");if(hit)showFlowDetail(hit.dataset.date);});
   $("flow-chart").addEventListener("keydown",event=>{const hit=event.target.closest(".flow-hit");if(hit&&(event.key==="Enter"||event.key===" ")){event.preventDefault();showFlowDetail(hit.dataset.date);}});
