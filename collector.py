@@ -349,12 +349,17 @@ def update_once(path: str | None = None) -> dict[str, Any]:
                 "SELECT value FROM app_meta WHERE key='bootstrap_reference_date'"
             ).fetchone()
             reference_date = reference_row["value"] if reference_row else None
-            pending_row = conn.execute(
-                """SELECT 1 FROM share_history s JOIN etfs e ON e.code=s.code
-                   WHERE s.trade_date=? AND e.group_name='core' AND s.source='腾讯行情份额字段' LIMIT 1""",
+            core_count = conn.execute("SELECT COUNT(*) FROM etfs WHERE group_name='core'").fetchone()[0]
+            official_count = conn.execute(
+                """SELECT COUNT(DISTINCT s.code) FROM share_history s JOIN etfs e ON e.code=s.code
+                   WHERE s.trade_date=? AND e.group_name='core'
+                     AND s.source IN ('上交所 ETF 规模披露','深交所 ETF 规模披露')""",
                 (latest,),
-            ).fetchone() if latest else None
-            pending_quote_date = bool(pending_row)
+            ).fetchone()[0] if latest else 0
+            # Retry the latest saved session whenever any core ETF lacks an
+            # exchange-confirmed row, including a total source outage that left
+            # no Tencent placeholder row behind.
+            pending_quote_date = bool(latest and official_count < core_count)
         finally:
             conn.close()
         if not etfs:

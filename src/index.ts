@@ -3,10 +3,12 @@ import { collectConfirmedDaily, fetchLiveFlow } from "./collector.ts";
 
 function json(data:unknown,status=200){return Response.json(data,{status,headers:{"Cache-Control":"no-store"}});}
 async function cachedRead(request:Request,env:Env,make:()=>Promise<unknown>){
-  const version=await env.DB.prepare("SELECT COALESCE(MAX(id),0) AS version FROM collection_runs").first<{version:number}>();
-  const url=new URL(request.url),key=new Request(`${url.origin}/__data_cache/${version?.version||0}${url.pathname}${url.search}`);
+  // Persisted dashboard data changes only after scheduled collection. Keep the
+  // cache key independent of D1 so polling clients do not spend one D1 read just
+  // to discover that a cached response is still current.
+  const url=new URL(request.url),key=new Request(`${url.origin}/__data_cache/v1${url.pathname}${url.search}`);
   const cache=caches.default,hit=await cache.match(key);if(hit)return hit;
-  const response=Response.json(await make(),{headers:{"Cache-Control":"public, max-age=86400"}});
+  const response=Response.json(await make(),{headers:{"Cache-Control":"public, max-age=300"}});
   await cache.put(key,response.clone());return response;
 }
 async function cachedLiveFlow(request:Request,env:Env){

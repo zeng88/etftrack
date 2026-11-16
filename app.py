@@ -113,8 +113,15 @@ class Handler(BaseHTTPRequestHandler):
         if urlparse(self.path).path != "/api/update":
             self.send_error(404)
             return
-        result = update_once()
-        self._json(result, 200 if result.get("status") != "failed" else 502)
+        try:
+            live_flow = fetch_live_flow()
+            self._json({
+                "status": "success",
+                "message": f"实时估算已更新 · {live_flow.get('time', '行情时间暂缺')}",
+                "live_flow": live_flow,
+            })
+        except Exception as exc:
+            self._json({"status": "failed", "message": f"实时估算暂不可用：{type(exc).__name__}: {exc}"}, 502)
 
 
 def _next_scheduled_run(now: datetime) -> tuple[datetime, str]:
@@ -149,7 +156,6 @@ def main() -> None:
     seeded = initialize_db()
     print("SQLite 初始化完成" + ("，已导入参考历史" if seeded else "，沿用现有数据库"))
     threading.Thread(target=_scheduler, name="etf-close-scheduler", daemon=True).start()
-    threading.Thread(target=update_once, name="startup-data-refresh", daemon=True).start()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"汪汪队ETF跟踪器：http://{HOST}:{PORT}")
     print("本地服务运行期间会在交易日收盘后 23:15 更新，并于次日 08:30 补采交易所份额；按 Ctrl+C 停止。")
