@@ -10,18 +10,6 @@
   let currentFlowDetail = null;
   let toastTimer = null;
   let dashboardRefreshBusy = false;
-  let dashboardReady = false;
-  let liveFlowReady = false;
-  const serviceNotice = $("service-notice");
-  if (serviceNotice) {
-    const noticeDismissed = sessionStorage.getItem("service-notice-dismissed") === "true";
-    if (noticeDismissed) serviceNotice.hidden = true;
-    $("service-notice-close").addEventListener("click", () => {
-      serviceNotice.hidden = true;
-      sessionStorage.setItem("service-notice-dismissed", "true");
-    });
-  }
-  function hideServiceNoticeWhenReady(){if(serviceNotice&&dashboardReady&&liveFlowReady)serviceNotice.hidden=true;}
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const number = (v,d=1) => Number.isFinite(Number(v)) ? Number(v).toLocaleString("zh-CN",{minimumFractionDigits:d,maximumFractionDigits:d}) : "—";
   const signed = (v,d=1) => `${Number(v)>0?"+":Number(v)<0?"−":""}${number(Math.abs(Number(v)||0),d)}`;
@@ -34,7 +22,7 @@
   const shanghaiNow = () => new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).format(new Date());
   const marketPhase = now => {const weekday=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Shanghai",weekday:"short"}).format(new Date()).toLowerCase();if(weekday==="sat"||weekday==="sun")return "offday";const hm=now.slice(11,16);if((hm>="09:30"&&hm<="11:30")||(hm>="13:00"&&hm<="15:00"))return "open";if(hm>"11:30"&&hm<"13:00")return "lunch";return hm>="15:00"?"closed":"preopen";};
   function toast(message,isError=false){const el=$("toast");el.textContent=message;el.className=`toast show${isError?" error":""}`;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className="toast",3800);}
-  async function loadDashboard(){const [r,s,o]=await Promise.all([fetch("/api/dashboard",{cache:"no-store"}),fetch(`/api/pool-stats?days=${statsDays}`,{cache:"no-store"}),fetch("/api/flow-overview",{cache:"no-store"})]);if(!r.ok)throw new Error(`数据读取失败（${r.status}）`);if(!s.ok||!o.ok)throw new Error("统计接口暂不可用");dashboard=await r.json();if(!dashboard.etfs?.length)throw new Error(dashboard.error||"暂无 ETF 行情数据");if(s.ok){const data=await s.json();poolStats=data.rows||[];}else poolStats=[];if(o.ok)flowOverview=await o.json();else flowOverview=null;if(liveFlow)applyLiveQuotes(liveFlow,false);render();dashboardReady=true;hideServiceNoticeWhenReady();}
+  async function loadDashboard(){const [r,s,o]=await Promise.all([fetch("/api/dashboard",{cache:"no-store"}),fetch(`/api/pool-stats?days=${statsDays}`,{cache:"no-store"}),fetch("/api/flow-overview",{cache:"no-store"})]);if(!r.ok)throw new Error(`数据读取失败（${r.status}）`);if(!s.ok||!o.ok)throw new Error("统计接口暂不可用");dashboard=await r.json();if(!dashboard.etfs?.length)throw new Error(dashboard.error||"暂无 ETF 行情数据");if(s.ok){const data=await s.json();poolStats=data.rows||[];}else poolStats=[];if(o.ok)flowOverview=await o.json();else flowOverview=null;if(liveFlow)applyLiveQuotes(liveFlow,false);render();}
   function render(){renderStatus();renderSummary();renderFlowOverview();renderPoolCharts();renderPoolStats();renderTable();if(liveFlow)renderLiveFlow();}
   function renderFlowOverview(){
     const data=flowOverview,cards=$("flow-metric-cards");
@@ -151,7 +139,7 @@
     try{
       const r=await fetch("/api/live-flow",{cache:"no-store"}),data=await r.json();
       if(!r.ok)throw new Error(data.error||"实时估算暂不可用");
-      liveFlow=data;liveFlowReady=true;applyLiveQuotes(data);renderLiveFlow();hideServiceNoticeWhenReady();
+      liveFlow=data;applyLiveQuotes(data);renderLiveFlow();
     }catch(e){$("signal-title").textContent="实时估算暂不可用";$("signal-copy").textContent="行情接口未能返回完整的重点 ETF 报价；保留的数值属于上次成功采集，不能视为当前买卖。";$("metric-active-note").textContent=`实时行情暂不可用 · ${localClock()}`;$("live-update-time").textContent="本轮采集失败";$("live-source").textContent=liveFlow?.time?`上次成功行情源 ${timeLabel(liveFlow.time)}`:"尚无成功行情记录";$("watchlist-update-time").textContent=`实时行情暂不可用 · 保留上次报价（${localClock()} 检查失败）`;$("refresh-status").classList.add("offline");$("refresh-status").querySelector("span").textContent="实时估算连接失败";}finally{liveRefreshBusy=false;}
   }
   function pointsFor(days){const all=dashboard.history?.pool||[];return days>0?all.slice(-days):all;}
