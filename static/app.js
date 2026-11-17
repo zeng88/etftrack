@@ -6,10 +6,13 @@
   let statsDays = 20;
   let poolStats = [];
   let liveFlow = null;
+  let liveTurnover = null;
+  let turnoverSelection = "aggregate";
   let selectedFlowDate = null;
   let currentFlowDetail = null;
   let toastTimer = null;
   let dashboardRefreshBusy = false;
+  let liveTurnoverRefreshBusy = false;
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const number = (v,d=1) => Number.isFinite(Number(v)) ? Number(v).toLocaleString("zh-CN",{minimumFractionDigits:d,maximumFractionDigits:d}) : "—";
   const signed = (v,d=1) => `${Number(v)>0?"+":Number(v)<0?"−":""}${number(Math.abs(Number(v)||0),d)}`;
@@ -24,6 +27,32 @@
   function toast(message,isError=false){const el=$("toast");el.textContent=message;el.className=`toast show${isError?" error":""}`;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className="toast",3800);}
   async function loadDashboard(){const [r,s,o]=await Promise.all([fetch("/api/dashboard",{cache:"no-store"}),fetch(`/api/pool-stats?days=${statsDays}`,{cache:"no-store"}),fetch("/api/flow-overview",{cache:"no-store"})]);if(!r.ok)throw new Error(`数据读取失败（${r.status}）`);if(!s.ok||!o.ok)throw new Error("统计接口暂不可用");dashboard=await r.json();if(!dashboard.etfs?.length)throw new Error(dashboard.error||"暂无 ETF 行情数据");if(s.ok){const data=await s.json();poolStats=data.rows||[];}else poolStats=[];if(o.ok)flowOverview=await o.json();else flowOverview=null;if(liveFlow)applyLiveQuotes(liveFlow,false);render();}
   function render(){renderStatus();renderSummary();renderFlowOverview();renderPoolCharts();renderPoolStats();renderTable();if(liveFlow)renderLiveFlow();}
+  function turnoverAt(points,time){const rows=(points||[]).filter(point=>String(point.time)<=time);return rows.length?Number(rows.at(-1).amount_yi)||0:0;}
+  function renderLiveTurnoverChart(){
+    const chart=$("live-turnover-chart"),data=liveTurnover;if(!data){chart.innerHTML='<div class="chart-empty">实时成交走势暂不可用，等待下一轮公开行情刷新</div>';return;}
+    const selected=turnoverSelection==="aggregate"?{name:`热门宽基合计（${data.comparison_count}只）`,today:data.aggregate?.today||[],previous:data.aggregate?.previous||[]}:data.items?.find(item=>item.code===turnoverSelection);
+    if(!selected?.today?.length||!selected?.previous?.length){chart.innerHTML='<div class="chart-empty">当前观察对象没有完整的两日五分钟成交数据</div>';return;}
+    const latest=selected.today.at(-1),current=Number(latest.amount_yi)||0,previous=turnoverAt(selected.previous,latest.time),delta=current-previous;
+    $("turnover-current").textContent=`${number(current,2)} 亿`;$("turnover-previous").textContent=`${number(previous,2)} 亿`;$("turnover-delta").textContent=`较上一交易日同刻 ${signed(delta,2)} 亿`;$("turnover-delta").className=`turnover-delta ${tone(delta)}`;
+    const names=data.items?.map(item=>`${item.name}（${item.code}）`).join("、")||"—";
+    $("turnover-scope").textContent=turnoverSelection==="aggregate"?`比较对象：${names}`:`当前观察：${selected.name}（${selected.code}）`;
+    $("turnover-source").textContent=`数据时间 ${dateLabel(data.date)} ${latest.time} · ${data.source||"公开行情"}`;$("turnover-note").textContent=data.note||"曲线为日内累计成交额，不代表资金净流入，也不能确认具体交易账户。";
+    const values=[...selected.today,...selected.previous].map(point=>Number(point.amount_yi)||0),rawMax=Math.max(...values,1),w=860,h=270,left=54,right=18,top=18,bottom=35,iw=w-left-right,ih=h-top-bottom;
+    const marketOffset=time=>{const match=String(time).match(/^(\d{2}):(\d{2})/);if(!match)return 0;const minute=Number(match[1])*60+Number(match[2]);return Math.max(0,Math.min(240,minute<780?minute-570:minute-660));};
+    const niceStep=value=>{const rough=value/4,magnitude=10**Math.floor(Math.log10(Math.max(rough,.01))),fraction=rough/magnitude,nice=fraction<=1?1:fraction<=2?2:fraction<=2.5?2.5:fraction<=5?5:10;return nice*magnitude;};
+    const step=niceStep(rawMax),max=Math.ceil(rawMax/step)*step,x=time=>left+marketOffset(time)/240*iw,y=value=>top+(max-value)/max*ih,makePath=points=>points.map((point,index)=>`${index?"L":"M"}${x(String(point.time)).toFixed(1)},${y(Number(point.amount_yi)||0).toFixed(1)}`).join(" ");
+    const yValues=Array.from({length:Math.round(max/step)+1},(_,index)=>index*step),yTicks=yValues.map(value=>`<line class="grid-line" x1="${left}" y1="${y(value)}" x2="${w-right}" y2="${y(value)}"/><text class="axis-label" text-anchor="end" x="${left-8}" y="${y(value)+3}">${number(value,0)}</text>`).join(""),allLabels=["09:30","10:00","10:30","11:00","13:00","13:30","14:00","14:30","15:00"],timeLabels=(window.innerWidth<620?allLabels.filter((_,index)=>index%2===0||index===allLabels.length-1):allLabels),labels=timeLabels.map((time,index)=>`<text class="axis-label turnover-axis-label" text-anchor="${index===0?"start":index===timeLabels.length-1?"end":"middle"}" x="${x(time)}" y="${h-7}">${time}</text>`).join("");
+    chart.innerHTML=`<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="${esc(selected.name)} 今日与上一交易日累计成交额曲线"><path class="turnover-area" d="${makePath(selected.today)} L${x(String(latest.time)).toFixed(1)},${y(0).toFixed(1)} L${x(String(selected.today[0].time)).toFixed(1)},${y(0).toFixed(1)} Z"/>${yTicks}<path class="turnover-line previous" d="${makePath(selected.previous)}"/><path class="turnover-line today" d="${makePath(selected.today)}"/><circle class="turnover-point today" cx="${x(String(latest.time))}" cy="${y(current)}" r="4"/>${labels}</svg>`;
+    const detail=$("turnover-point-detail"),showPoint=time=>{const now=turnoverAt(selected.today,time),before=turnoverAt(selected.previous,time),gap=now-before;detail.innerHTML=`<b>${dateLabel(data.date)} ${esc(time)}</b><span>今日 ${number(now,2)} 亿</span><span>${dateLabel(data.previous_date)} 同刻 ${number(before,2)} 亿</span><strong class="${tone(gap)}">${signed(gap,2)} 亿</strong>`;};
+    showPoint(String(latest.time));
+    chart.querySelector("svg").addEventListener("click",event=>{const rect=event.currentTarget.getBoundingClientRect(),viewX=(event.clientX-rect.left)/rect.width*w,target=(viewX-left)/iw*240,candidates=[...selected.today,...selected.previous],nearest=candidates.reduce((best,point)=>Math.abs(marketOffset(point.time)-target)<Math.abs(marketOffset(best.time)-target)?point:best,candidates[0]);showPoint(String(nearest.time));});
+  }
+  async function refreshLiveTurnover(){
+    if(liveTurnoverRefreshBusy)return;liveTurnoverRefreshBusy=true;
+    try{const r=await fetch("/api/live-turnover",{cache:"no-store"}),data=await r.json();if(!r.ok)throw new Error(data.error||"实时成交走势暂不可用");liveTurnover=data;
+      const select=$("turnover-etf-select"),options=[...select.options].map(option=>option.value);for(const item of data.items||[])if(!options.includes(item.code)){const option=document.createElement("option");option.value=item.code;option.textContent=`${item.name}（${item.code}）`;select.append(option);}if(turnoverSelection!=="aggregate"&&!(data.items||[]).some(item=>item.code===turnoverSelection)){turnoverSelection="aggregate";select.value="aggregate";}renderLiveTurnoverChart();
+    }catch(error){if(!liveTurnover)$("live-turnover-chart").innerHTML=`<div class="chart-empty">${esc(error.message||"实时成交走势暂不可用")}</div>`;}finally{liveTurnoverRefreshBusy=false;}
+  }
   function renderFlowOverview(){
     const data=flowOverview,cards=$("flow-metric-cards");
     if(!data?.metrics?.length){$("flow-overview-date").textContent="暂无完整金额数据";$("flow-overview-meta").textContent="等待份额与价格数据完整";cards.innerHTML='<div class="flow-metric-card flow-metric-loading">当前没有满足完整口径的交易日数据</div>';$("flow-index-rows").innerHTML='<tr><td colspan="8" class="empty-row">暂无完整数据</td></tr>';$("flow-etf-rows").innerHTML='<tr><td colspan="8" class="empty-row">暂无完整数据</td></tr>';return;}
@@ -230,9 +259,12 @@
   $("pool-stats-rows").addEventListener("click",event=>{const row=event.target.closest("tr[data-date]");if(!row)return;showFlowDetail(row.dataset.date).then(()=>$("flow-detail").scrollIntoView({behavior:"smooth",block:"center"}));});
   $("pool-stats-rows").addEventListener("keydown",event=>{const row=event.target.closest("tr[data-date]");if(row&&(event.key==="Enter"||event.key===" ")){event.preventDefault();row.click();}});
   $("search").addEventListener("input",renderTable);$("scope").addEventListener("change",renderTable);$("sort").addEventListener("change",renderTable);
+  $("turnover-etf-select").addEventListener("change",event=>{turnoverSelection=event.target.value;renderLiveTurnoverChart();});
   loadDashboard().then(()=>refreshNow(true)).catch(e=>{$("signal-title").textContent="数据暂时不可用";$("signal-copy").textContent=e.message;$("etf-rows").innerHTML=`<tr><td colspan="10" class="empty-row">${esc(e.message)}</td></tr>`;toast(e.message,true);});
   refreshLiveFlow();
+  refreshLiveTurnover();
   setInterval(refreshLiveFlow,20000);
+  setInterval(refreshLiveTurnover,20000);
   const refreshPersistedData=async()=>{if(document.hidden||dashboardRefreshBusy)return;dashboardRefreshBusy=true;try{await loadDashboard();}catch(error){console.warn("定时读取统计数据失败",error);}finally{dashboardRefreshBusy=false;}};
   setInterval(refreshPersistedData,300000);
   document.addEventListener("visibilitychange",()=>{if(!document.hidden){refreshPersistedData();refreshLiveFlow();}});

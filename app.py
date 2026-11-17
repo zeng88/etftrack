@@ -13,7 +13,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
-from collector import fetch_live_flow, update_once
+from collector import fetch_live_flow, fetch_live_turnover_comparison, update_once
 from storage import ROOT, initialize_db, load_dashboard, load_flow_detail, load_pool_statistics, load_flow_overview
 
 TZ = ZoneInfo("Asia/Shanghai")
@@ -91,6 +91,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(fetch_live_flow())
             except Exception as exc:
                 self._json({"error": f"实时买卖估算暂不可用：{type(exc).__name__}: {exc}"}, 502)
+            return
+        if parsed.path == "/api/live-turnover":
+            try:
+                self._json(fetch_live_turnover_comparison())
+            except Exception as exc:
+                self._json({"error": f"实时成交走势暂不可用：{type(exc).__name__}: {exc}"}, 502)
             return
 
         relative = "index.html" if parsed.path in ("", "/") else parsed.path.lstrip("/")

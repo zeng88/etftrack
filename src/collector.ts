@@ -2,7 +2,76 @@ import { bumpDataRevision, type Env } from "./db.ts";
 import { LIVE_ETFS } from "./etf-list.ts";
 
 const QUOTE_URL = "https://qt.gtimg.cn/q=";
+const SINA_KLINE_URL="https://quotes.sina.cn/cn/api/jsonp.php/=/CN_MarketDataService.getKLineData";
 const USER_AGENT = "Mozilla/5.0 (compatible; etftrack/1.0)";
+
+// This smaller basket is deliberately about market-wide broad-index turnover,
+// not the complete 34-ETF observation pool used by the daily share collector.
+export const LIVE_TURNOVER_CODES=["510300","159915","588000","510330","159919","510050","510500","512100","510310"];
+export type TurnoverPoint={time:string;amount_yi:number};
+type RawKlineBar={day?:string;amount?:string|number};
+type TurnoverEtf={code:string;tcode:string;name:string};
+
+function klineDay(value:unknown){
+  const match=String(value||"").match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+  return match?{date:`${match[1]}${match[2]}${match[3]}`,time:`${match[4]}:${match[5]}`} : null;
+}
+function asAmountYi(value:unknown){const n=Number(value);return Number.isFinite(n)&&n>=0?n/1e8:0;}
+function cumulativeBars(bars:RawKlineBar[]){
+  const daily=new Map<string,TurnoverPoint[]>();
+  for(const bar of bars){const stamp=klineDay(bar.day);if(!stamp)continue;const amount=asAmountYi(bar.amount);if(!amount)continue;const points=daily.get(stamp.date)||[];const prior=points.at(-1)?.amount_yi||0;points.push({time:stamp.time,amount_yi:+(prior+amount).toFixed(6)});daily.set(stamp.date,points);}
+  return daily;
+}
+function mergeLatestQuote(points:TurnoverPoint[],quote:Record<string,unknown>|undefined,date:string){
+  const stamp=String(quote?.ts||"");const amount=Number(quote?.amount_yi);
+  if(!/^\d{14}$/.test(stamp)||stamp.slice(0,8)!==date||!Number.isFinite(amount)||amount<0)return points;
+  const time=`${stamp.slice(8,10)}:${stamp.slice(10,12)}`,last=points.at(-1);
+  const inSession=(time>="09:30"&&time<="11:30")||(time>="13:00"&&time<="15:00");
+  // Tencent can continue publishing a timestamp after close. It must not form
+  // a false second endpoint at x=15:00, nor replace a valid K-line close.
+  if(!inSession||!last||time<last.time||amount<last.amount_yi)return points;
+  const next={time,amount_yi:+amount.toFixed(6)};
+  return last.time===time?[...points.slice(0,-1),next]:[...points,next];
+}
+function aggregateTurnover(items:{today:TurnoverPoint[];previous:TurnoverPoint[]}[],key:"today"|"previous"){
+  const lookup=new Map<string,number>();
+  for(const item of items)for(const point of item[key])lookup.set(point.time,+(lookup.get(point.time)||0)+point.amount_yi);
+  return [...lookup].sort((a,b)=>a[0].localeCompare(b[0])).map(([time,amount_yi])=>({time,amount_yi:+amount_yi.toFixed(6)}));
+}
+export function buildLiveTurnoverComparison(etfs:TurnoverEtf[],rawBars:Map<string,RawKlineBar[]>,quotes:Map<string,Record<string,unknown>>){
+  const parsed=etfs.map(etf=>({etf,daily:cumulativeBars(rawBars.get(etf.code)||[])})).filter(row=>row.daily.size>=2);
+  if(!parsed.length)throw new Error("热门 ETF 五分钟成交数据暂不可用");
+  let commonDates: string[]|null=null;
+  for(const row of parsed){const dates=[...row.daily.keys()];commonDates=commonDates===null?dates:commonDates.filter(date=>dates.includes(date));}
+  const dates=(commonDates||[]).sort();
+  if(dates.length<2)throw new Error("热门 ETF 暂无两个可对比的共同交易日");
+  const previous_date=dates.at(-2)!,date=dates.at(-1)!;
+  const items=parsed.map(({etf,daily})=>({
+    code:etf.code,tcode:etf.tcode,name:etf.name,previous_date,
+    previous:daily.get(previous_date)!,today:mergeLatestQuote(daily.get(date)!,quotes.get(etf.code),date),
+  }));
+  return {date,previous_date,default_codes:items.map(item=>item.code),comparison_count:items.length,items,
+    aggregate:{today:aggregateTurnover(items,"today"),previous:aggregateTurnover(items,"previous")}};
+}
+async function fetchSinaKlines(etf:TurnoverEtf){
+  const params=new URLSearchParams({symbol:etf.tcode,scale:"5",ma:"5",datalen:"120"});
+  const raw=await getText(`${SINA_KLINE_URL}?${params}`,"https://finance.sina.com.cn/",12000);
+  const start=raw.indexOf("=("),end=raw.lastIndexOf(")");
+  if(start<0||end<=start)throw new Error(`${etf.code} 新浪 K 线响应格式无法识别`);
+  const value=JSON.parse(raw.slice(start+2,end));if(!Array.isArray(value))throw new Error(`${etf.code} 新浪 K 线没有返回数组`);
+  return [etf.code,value as RawKlineBar[]] as const;
+}
+export async function fetchLiveTurnoverComparison(){
+  const etfs=LIVE_TURNOVER_CODES.map(code=>LIVE_ETFS.find(item=>item.code===code)).filter((item):item is typeof LIVE_ETFS[number]=>Boolean(item));
+  if(etfs.length!==LIVE_TURNOVER_CODES.length)throw new Error("热门 ETF 名单配置不完整");
+  const [raw,entries]=await Promise.all([
+    getText(QUOTE_URL+etfs.map(item=>item.tcode).join(",")),
+    Promise.all(Array.from({length:Math.ceil(etfs.length/5)},(_,i)=>Promise.all(etfs.slice(i*5,i*5+5).map(fetchSinaKlines)))).then(groups=>groups.flat()),
+  ]);
+  const result=buildLiveTurnoverComparison(etfs, new Map(entries), decodeTencent(raw));
+  const newest=result.items.flatMap(item=>item.today).map(point=>point.time).sort().at(-1)||"—";
+  return {...result,time:newest,source:"新浪公开五分钟 K 线 + 腾讯公开行情",note:"默认合计为 9 只热门宽基 ETF；当日曲线末点以腾讯实时累计成交额补齐。"};
+}
 
 export function shareRetryDates(tradeDate:string,currentAlreadyComplete:boolean,pendingDates:string[]){
   const unique=[...new Set(pendingDates)].filter(Boolean).filter(date=>date!==tradeDate).sort();

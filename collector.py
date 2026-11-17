@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import sqlite3
 import subprocess
@@ -21,6 +22,7 @@ from storage import DB_PATH, connect
 TZ = ZoneInfo("Asia/Shanghai")
 QUOTE_URL = "https://qt.gtimg.cn/q="
 SINA_KLINE_URL = "https://quotes.sina.cn/cn/api/jsonp.php/=/CN_MarketDataService.getKLineData"
+LIVE_TURNOVER_CODES = ("510300", "159915", "588000", "510330", "159919", "510050", "510500", "512100", "510310")
 SOURCE = "腾讯公开行情 + 新浪 5 分钟 K 线"
 RUN_LOCK = threading.Lock()
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128 Safari/537.36"
@@ -33,7 +35,17 @@ def _https_get(url: str, referer: str = "") -> bytes:
     if referer:
         args += ["--referer", referer]
     args.append(url)
-    return subprocess.run(args, check=True, capture_output=True, timeout=25).stdout
+    try:
+        return subprocess.run(args, check=True, capture_output=True, timeout=25).stdout
+    except subprocess.CalledProcessError:
+        # A stale local proxy (common after closing a desktop proxy client) must
+        # not make the public data source permanently unavailable. Keep a
+        # working proxy as the first choice, then retry exactly once directly.
+        proxy_keys = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
+        if not any(os.environ.get(key) for key in proxy_keys):
+            raise
+        direct_env = {key: value for key, value in os.environ.items() if key not in proxy_keys}
+        return subprocess.run([*args[:-1], "--noproxy", "*", args[-1]], check=True, capture_output=True, timeout=25, env=direct_env).stdout
 
 
 def _number(fields: list[str], index: int) -> float:
@@ -46,7 +58,9 @@ def _number(fields: list[str], index: int) -> float:
 
 def fetch_quotes(etfs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     symbols = ",".join(item["tcode"] for item in etfs)
-    raw = _https_get(QUOTE_URL + urlencode({"q": symbols})).decode("gb18030", errors="replace")
+    # QUOTE_URL already contains its q= parameter; encoding another q key
+    # produces q=q=... and makes local realtime requests fail.
+    raw = _https_get(QUOTE_URL + symbols).decode("gb18030", errors="replace")
     quotes: dict[str, dict[str, Any]] = {}
     for statement in raw.split(";"):
         if '="' not in statement:
@@ -124,8 +138,102 @@ def fetch_live_flow(path: str | None = None) -> dict[str, Any]:
     }
 
 
-def _fetch_sina(etf: dict[str, Any]) -> tuple[str, list[dict[str, Any]], str | None]:
-    query = urlencode({"symbol": etf["tcode"], "scale": "5", "ma": "5", "datalen": "1023"})
+def _turnover_stamp(value: Any) -> tuple[str, str] | None:
+    match = re.match(r"^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})", str(value or ""))
+    return (f"{match.group(1)}{match.group(2)}{match.group(3)}", f"{match.group(4)}:{match.group(5)}") if match else None
+
+
+def _cumulative_turnover(bars: list[dict[str, Any]]) -> dict[str, list[dict[str, float | str]]]:
+    daily: dict[str, list[dict[str, float | str]]] = {}
+    for bar in bars:
+        stamp = _turnover_stamp(bar.get("day"))
+        if not stamp:
+            continue
+        try:
+            amount = float(bar.get("amount") or 0) / 1e8
+        except (TypeError, ValueError):
+            amount = 0.0
+        if not math.isfinite(amount) or amount <= 0:
+            continue
+        date, minute = stamp
+        points = daily.setdefault(date, [])
+        points.append({"time": minute, "amount_yi": round((float(points[-1]["amount_yi"]) if points else 0.0) + amount, 6)})
+    return daily
+
+
+def _merge_turnover_quote(points: list[dict[str, float | str]], quote: dict[str, Any] | None, date: str) -> list[dict[str, float | str]]:
+    stamp = str((quote or {}).get("ts") or "")
+    try:
+        amount = float((quote or {}).get("amount_yi"))
+    except (TypeError, ValueError):
+        return points
+    if not re.fullmatch(r"\d{14}", stamp) or stamp[:8] != date or not math.isfinite(amount) or amount < 0:
+        return points
+    minute = f"{stamp[8:10]}:{stamp[10:12]}"
+    in_session = ("09:30" <= minute <= "11:30") or ("13:00" <= minute <= "15:00")
+    if not in_session or (points and (minute < str(points[-1]["time"]) or amount < float(points[-1]["amount_yi"]))):
+        return points
+    next_point: dict[str, float | str] = {"time": minute, "amount_yi": round(amount, 6)}
+    return [*points[:-1], next_point] if points and minute == points[-1]["time"] else [*points, next_point]
+
+
+def _aggregate_turnover(items: list[dict[str, Any]], field: str) -> list[dict[str, float | str]]:
+    totals: dict[str, float] = {}
+    for item in items:
+        for point in item[field]:
+            minute = str(point["time"])
+            totals[minute] = totals.get(minute, 0.0) + float(point["amount_yi"])
+    return [{"time": minute, "amount_yi": round(amount, 6)} for minute, amount in sorted(totals.items())]
+
+
+def fetch_live_turnover_comparison(path: str | None = None) -> dict[str, Any]:
+    """Compare today's cumulative broad-index ETF turnover with the previous session.
+
+    This is a read-only public-API request. It intentionally does not persist
+    curve points, so local preview and Worker deployment have identical semantics.
+    """
+    conn = connect(path or DB_PATH)
+    try:
+        rows = {row["code"]: dict(row) for row in conn.execute("SELECT code,tcode,name FROM etfs WHERE code IN (%s)" % ",".join("?" * len(LIVE_TURNOVER_CODES)), LIVE_TURNOVER_CODES)}
+    finally:
+        conn.close()
+    etfs = [rows[code] for code in LIVE_TURNOVER_CODES if code in rows]
+    if len(etfs) != len(LIVE_TURNOVER_CODES):
+        raise RuntimeError("热门 ETF 名单配置不完整")
+    quotes = fetch_quotes(etfs)
+    bars_by_code: dict[str, list[dict[str, Any]]] = {}
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(_fetch_sina, etf, 120): etf["code"] for etf in etfs}
+        for future in as_completed(futures):
+            code, bars, _error = future.result()
+            bars_by_code[code] = bars
+    parsed = [(etf, _cumulative_turnover(bars_by_code.get(etf["code"], []))) for etf in etfs]
+    parsed = [(etf, daily) for etf, daily in parsed if len(daily) >= 2]
+    if not parsed:
+        raise RuntimeError("热门 ETF 五分钟成交数据暂不可用")
+    common_dates: set[str] | None = None
+    for _etf, daily in parsed:
+        common_dates = set(daily) if common_dates is None else common_dates & set(daily)
+    dates = sorted(common_dates or ())
+    if len(dates) < 2:
+        raise RuntimeError("热门 ETF 暂无两个可对比的共同交易日")
+    previous_date, date = dates[-2:]
+    items = [{
+        "code": etf["code"], "tcode": etf["tcode"], "name": etf["name"], "previous_date": previous_date,
+        "previous": daily[previous_date], "today": _merge_turnover_quote(daily[date], quotes.get(etf["code"]), date),
+    } for etf, daily in parsed]
+    newest = max((str(point["time"]) for item in items for point in item["today"]), default="—")
+    return {
+        "date": date, "previous_date": previous_date, "default_codes": [item["code"] for item in items],
+        "comparison_count": len(items), "items": items,
+        "aggregate": {"today": _aggregate_turnover(items, "today"), "previous": _aggregate_turnover(items, "previous")},
+        "time": newest, "source": "新浪公开五分钟 K 线 + 腾讯公开行情",
+        "note": "默认合计为 9 只热门宽基 ETF；当日曲线末点以腾讯实时累计成交额补齐。",
+    }
+
+
+def _fetch_sina(etf: dict[str, Any], datalen: int = 1023) -> tuple[str, list[dict[str, Any]], str | None]:
+    query = urlencode({"symbol": etf["tcode"], "scale": "5", "ma": "5", "datalen": str(datalen)})
     try:
         raw = _https_get(f"{SINA_KLINE_URL}?{query}", "https://finance.sina.com.cn/").decode("utf-8", errors="replace")
         start = raw.find("=(")
