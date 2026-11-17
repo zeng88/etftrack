@@ -22,7 +22,7 @@ case "${1:-}" in
       python3 scripts/sqlite_to_d1.py --output "$IMPORT_FILE"
     fi
     echo "目标 D1：etf（${D1_DATABASE_ID:-wrangler.jsonc 中配置的 ID}）"
-    echo "将按主键幂等 upsert 导入 $IMPORT_FILE；不会清空表或删除未知记录。"
+    echo "将按主键幂等 upsert 导入 ${IMPORT_FILE}；不会清空表或删除未知记录。"
     npx wrangler d1 execute etf --remote --file "$IMPORT_FILE"
     ;;
   *)

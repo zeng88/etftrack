@@ -559,8 +559,11 @@ def update_once(path: str | None = None) -> dict[str, Any]:
                         "kline_status": "available" if code in bars_by_code else "unavailable",
                     }
                     conn.execute(
-                        """INSERT OR REPLACE INTO share_history(trade_date,code,shares,observed_at,source)
-                           VALUES(?,?,?,?,?)""",
+                        """INSERT INTO share_history(trade_date,code,shares,observed_at,source)
+                           VALUES(?,?,?,?,?)
+                           ON CONFLICT(trade_date,code) DO UPDATE SET
+                             shares=excluded.shares, observed_at=excluded.observed_at, source=excluded.source
+                           WHERE share_history.source NOT IN ('上交所 ETF 规模披露','深交所 ETF 规模披露')""",
                         (trade_date, code, quote["shares"], quote["ts"], "腾讯行情份额字段"),
                     )
                     conn.execute(

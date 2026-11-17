@@ -143,11 +143,12 @@ def _next_scheduled_run(now: datetime) -> tuple[datetime, str]:
 
 def _scheduler() -> None:
     while True:
-        now = datetime.now(TZ)
-        target, task_name = _next_scheduled_run(now)
-        wait_seconds = max(1, (target - now).total_seconds())
+        target, task_name = _next_scheduled_run(datetime.now(TZ))
         print(f"本地自动更新已安排：{target.strftime('%Y-%m-%d %H:%M')} Asia/Shanghai · {task_name}")
-        time.sleep(wait_seconds)
+        # Poll the wall clock in short intervals: a long time.sleep() pauses while
+        # macOS is asleep, which would silently postpone the task past its target.
+        while (target - datetime.now(TZ)).total_seconds() > 0:
+            time.sleep(15)
         result = update_once()
         print(f"{task_name}：{result.get('status')} · {result.get('message')}")
 
