@@ -24,6 +24,8 @@ case "${1:-}" in
     echo "目标 D1：etf（${D1_DATABASE_ID:-wrangler.jsonc 中配置的 ID}）"
     echo "将按主键幂等 upsert 导入 ${IMPORT_FILE}；不会清空表或删除未知记录。"
     npx wrangler d1 execute etf --remote --file "$IMPORT_FILE"
+    # Bump the data revision so Worker API caches recompute after a local sync.
+    npx wrangler d1 execute etf --remote --command "INSERT INTO app_meta(key,value) VALUES('data_revision',strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
     ;;
   *)
     echo "用法：scripts/sync-d1.sh export | pull-local | push-remote --remote [sql-file]"

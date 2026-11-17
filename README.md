@@ -67,6 +67,8 @@ API Token 只保存在 GitHub Secrets，不能写入代码或提交到仓库。C
 
 Worker 绑定 D1 和 `static/`，并配置 UTC 工作日 15:15（北京时间 23:15）计划采集。盘中 API 返回腾讯公开行情估算，不将行情份额当成交易所确认的正式份额历史。正式份额只有当日核心 ETF 全部从交易所取齐时才写入；缺项时保留最近完整确认日。
 
+云端统计接口（`/api/dashboard`、`/api/pool-stats`、`/api/flow-overview`、`/api/flow-detail`）的聚合结果按 `app_meta.data_revision` 缓存在 D1 单行 `api_cache` 表中；常规请求只读取版本和缓存行，不再重复扫描历史份额/成交表。定时采集成功或本地同步完成后会更新 `data_revision`，使边缘缓存和 `api_cache` 自动失效。实时估算接口只使用静态 ETF 名单和腾讯公开行情，不读取 D1。
+
 ## 数据口径
 
 - 重点 ETF 池汇总份额变化、成交额与内外盘估算。份额增减不能识别申赎主体；内外盘估算不能确认具体投资者身份。

@@ -1,4 +1,4 @@
-import type { Env } from "./db";
+import { bumpDataRevision, type Env } from "./db.ts";
 import { LIVE_ETFS } from "./etf-list.ts";
 
 const QUOTE_URL = "https://qt.gtimg.cn/q=";
@@ -137,6 +137,8 @@ export async function collectConfirmedDaily(env:Env, timestamp:number){
     const coverage=currentCoverageCount;
     const message=full?`已采集 ${core.length} 只核心 ETF 行情与官方份额`:`已采集行情；官方份额未齐（${coverage}/${core.length}），${sourceErrors.length?"数据源暂时超时；":""}后续定时继续补采`;
     await run("success",message,date);
+    // Invalidate the pre-computed API payloads and their edge-cache keys.
+    await bumpDataRevision(env.DB);
     return {status:"success",trade_date:date,confirmed_shares:full,coverage,core_count:core.length,source_errors:sourceErrors.slice(0,5)};
   }catch(error){await run("failed",error instanceof Error?error.message:String(error));throw error;}
 }

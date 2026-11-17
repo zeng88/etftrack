@@ -3,6 +3,19 @@ export interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> };
 }
 
+export async function getDataRevision(db: D1Database): Promise<string> {
+  const row = await db.prepare("SELECT value FROM app_meta WHERE key='data_revision'")
+    .first<{ value: string }>();
+  return row?.value ?? "0";
+}
+
+export async function bumpDataRevision(db: D1Database): Promise<void> {
+  await db.prepare(
+    `INSERT INTO app_meta(key,value) VALUES('data_revision',?)
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+  ).bind(new Date().toISOString()).run();
+}
+
 export async function loadDashboard(db: D1Database) {
   const latestRow = await db.prepare("SELECT MAX(trade_date) AS d FROM daily_snapshots").first<{ d: string | null }>();
   const latest = latestRow?.d ?? null;

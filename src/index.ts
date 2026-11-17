@@ -1,14 +1,21 @@
-import { loadDashboard, loadFlowDetail, loadPoolStatistics, loadFlowOverview, type Env } from "./db.ts";
+import { loadDashboard, loadFlowDetail, loadPoolStatistics, loadFlowOverview, getDataRevision, type Env } from "./db.ts";
+import { cachedPayload } from "./api-cache.ts";
 import { collectConfirmedDaily, fetchLiveFlow } from "./collector.ts";
 
 function json(data:unknown,status=200){return Response.json(data,{status,headers:{"Cache-Control":"no-store"}});}
-async function cachedRead(request:Request,env:Env,make:()=>Promise<unknown>){
-  // Persisted dashboard data changes only after scheduled collection. Keep the
-  // cache key independent of D1 so polling clients do not spend one D1 read just
-  // to discover that a cached response is still current.
-  const url=new URL(request.url),key=new Request(`${url.origin}/__data_cache/v1${url.pathname}${url.search}`);
+async function cachedRead(
+  request:Request,
+  env:Env,
+  make:(revision:string)=>Promise<{data:unknown;status?:number}>,
+){
+  // Historical data only changes after a scheduled collection or a local sync.
+  // Put the revision in the edge key so those writes invalidate cached copies,
+  // and keep the expensive aggregation in api_cache so a miss costs one D1 row.
+  const revision=await getDataRevision(env.DB);
+  const url=new URL(request.url),key=new Request(`${url.origin}/__data_cache/v2/${revision}${url.pathname}${url.search}`);
   const cache=caches.default,hit=await cache.match(key);if(hit)return hit;
-  const response=Response.json(await make(),{headers:{"Cache-Control":"public, max-age=300"}});
+  const result=await make(revision);
+  const response=Response.json(result.data,{status:result.status??200,headers:{"Cache-Control":"public, max-age=3600"}});
   await cache.put(key,response.clone());return response;
 }
 async function cachedLiveFlow(request:Request){
@@ -23,15 +30,27 @@ export default {
     const url = new URL(request.url);
     try {
       if(url.pathname==="/api/health")return json({ok:true,time:new Date().toISOString()});
-      if(url.pathname==="/api/dashboard"&&request.method==="GET")return cachedRead(request,env,()=>loadDashboard(env.DB));
+      if(url.pathname==="/api/dashboard"&&request.method==="GET")return cachedRead(request,env,async revision=>({
+        data:await cachedPayload(env,"dashboard",revision,()=>loadDashboard(env.DB)),
+      }));
       if(url.pathname==="/api/pool-stats"&&request.method==="GET"){
         const raw=Number(url.searchParams.get("days")||20),days=Math.min(Math.max(Number.isFinite(raw)?Math.trunc(raw):20,1),240);
-        return cachedRead(request,env,async()=>({days,rows:await loadPoolStatistics(env.DB,days)}));
+        return cachedRead(request,env,async revision=>{
+          const rows=await cachedPayload(env,"pool-stats:all",revision,()=>loadPoolStatistics(env.DB,0));
+          return {data:{days,rows:days>0?rows.slice(-days):rows}};
+        });
       }
-      if(url.pathname==="/api/flow-overview"&&request.method==="GET")return cachedRead(request,env,()=>loadFlowOverview(env.DB));
+      if(url.pathname==="/api/flow-overview"&&request.method==="GET")return cachedRead(request,env,async revision=>({
+        data:await cachedPayload(env,"flow-overview",revision,()=>loadFlowOverview(env.DB)),
+      }));
       if(url.pathname==="/api/flow-detail"&&request.method==="GET"){
         const date=url.searchParams.get("date")||"";if(!/^\d{8}$/.test(date))return json({error:"日期格式应为 YYYYMMDD"},400);
-        const detail=await loadFlowDetail(env.DB,date);if(!detail.items.length)return json({error:"所选日期没有份额明细"},404);return json(detail);
+        return cachedRead(request,env,async revision=>{
+          const detail=await cachedPayload(env,`flow-detail:${date}`,revision,()=>loadFlowDetail(env.DB,date));
+          return detail.items.length
+            ?{data:detail}
+            :{data:{error:"所选日期没有份额明细"},status:404};
+        });
       }
       if(url.pathname==="/api/live-flow"&&request.method==="GET")return cachedLiveFlow(request);
       if(url.pathname==="/api/update"&&request.method==="POST"){
