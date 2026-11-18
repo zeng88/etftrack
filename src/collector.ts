@@ -255,5 +255,12 @@ export async function collectConfirmedDaily(env:Env, timestamp:number){
     // Invalidate the pre-computed API payloads and their edge-cache keys.
     await bumpDataRevision(env.DB);
     return {status:"success",trade_date:date,confirmed_shares:full,coverage,core_count:core.length,source_errors:sourceErrors.slice(0,5)};
-  }catch(error){await run("failed",error instanceof Error?error.message:String(error));throw error;}
+  }catch(error){
+    const message=error instanceof Error?error.message:String(error);
+    // Record the failure and invalidate the API cache so the page shows it
+    // immediately instead of keeping the last successful run forever.
+    try{await run("failed",message);}catch{}
+    try{await bumpDataRevision(env.DB);}catch{}
+    throw error;
+  }
 }

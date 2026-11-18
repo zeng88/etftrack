@@ -149,6 +149,22 @@ test("intraday retry does not persist the current session as a close", async t =
   assert.equal(state.closes.size, 0);
 });
 
+test("a quote failure records a failed run and invalidates the cache", async t => {
+  const etfs = [
+    { code: "510300", tcode: "sh510300", name: "沪深300ETF", group_name: "core" },
+  ];
+  const { db, state } = createDb(etfs);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("quote source down"); };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  await assert.rejects(
+    () => collectConfirmedDaily({ DB: db }, Date.parse("2026-11-18T15:15:00Z")),
+    /quote source down/,
+  );
+  assert.ok(state.runs.some(args => args[2] === "failed"));
+});
+
 test("intraday retry heals the previous session close from prev_close", async t => {
   const etfs = [
     { code: "510300", tcode: "sh510300", name: "沪深300ETF", group_name: "core" },
