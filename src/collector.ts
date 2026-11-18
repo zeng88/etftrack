@@ -135,6 +135,9 @@ export async function collectConfirmedDaily(env:Env, timestamp:number){
     // A morning retry runs on the next calendar day while Tencent still reports
     // the previous trading session. Use the quote's trading date for all rows.
     const date=[...quoteDates][0],dateISO=`${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}`;
+    // The 13:30 retry runs while the market is still open. Only quotes whose
+    // clocks have all reached 15:00 may be persisted as the session snapshot/close.
+    const marketClosed=core.every(e=>String(quotes.get(e.code)?.ts||"").slice(8,12)>="1500");
     const currentCoverage=await env.DB.prepare(`SELECT COUNT(DISTINCT s.code) AS count FROM share_history s JOIN etfs e ON e.code=s.code
       WHERE s.trade_date=? AND e.group_name='core' AND s.source IN ('上交所 ETF 规模披露','深交所 ETF 规模披露')`)
       .bind(date).first<{count:number}>();
@@ -149,7 +152,7 @@ export async function collectConfirmedDaily(env:Env, timestamp:number){
       .bind(date).all<{trade_date:string}>();
     // Workers Free allows 50 external subrequests per invocation. One quote
     // request plus two dates × (one SSE + up to fourteen SZSE requests) = 31.
-    const retryDates=shareRetryDates(date,currentAlreadyComplete,(pending.results||[]).map(row=>row.trade_date));
+    const retryDates=shareRetryDates(date,marketClosed?currentAlreadyComplete:true,(pending.results||[]).map(row=>row.trade_date));
     const newOfficialByDate=new Map<string,Map<string,{shares:number;source:string}>>();
     const coverageByDate=new Map<string,number>();
     const sourceErrors:string[]=[];
@@ -182,29 +185,42 @@ export async function collectConfirmedDaily(env:Env, timestamp:number){
       coverageByDate.set(retryDate,coverage);
     }
     const currentCoverageCount=coverageByDate.get(date)??Number(currentCoverage?.count||0);
-    const full=currentCoverageCount===core.length;
-    const prevRows=await env.DB.prepare(`SELECT s.code,s.shares FROM share_history s JOIN (
-      SELECT code,MAX(trade_date) AS trade_date FROM share_history
-      WHERE trade_date<? AND source <> '腾讯行情份额字段' GROUP BY code
-    ) p ON p.code=s.code AND p.trade_date=s.trade_date WHERE s.source <> '腾讯行情份额字段'`).bind(date).all<{code:string;shares:number}>();
-    const previous=new Map((prevRows.results||[]).map(r=>[r.code,Number(r.shares)]));
+    const full=marketClosed&&currentCoverageCount===core.length;
     const stmts=[];
     for(const [retryDate,rows] of newOfficialByDate){for(const [code,x] of rows)stmts.push(env.DB.prepare(`INSERT INTO share_history(trade_date,code,shares,observed_at,source) VALUES(?,?,?,?,?)
       ON CONFLICT(trade_date,code) DO UPDATE SET shares=excluded.shares,observed_at=excluded.observed_at,source=excluded.source`)
       .bind(retryDate,code,x.shares,new Date().toISOString(),x.source));}
-    const [existingSnapshots,existingActivity]=await Promise.all([
-      env.DB.prepare("SELECT code FROM daily_snapshots WHERE trade_date=?").bind(date).all<{code:string}>(),
-      env.DB.prepare("SELECT code FROM daily_activity WHERE trade_date=?").bind(date).all<{code:string}>(),
-    ]);
-    const snapshotMissing=new Set(missingEtfsForDate(etfs,existingSnapshots.results||[]).map(e=>e.code));
-    const activityMissing=new Set(missingEtfsForDate(etfs,existingActivity.results||[]).map(e=>e.code));
-    for(const etf of etfs){const q=quotes.get(etf.code);if(!q)continue;const old=previous.get(etf.code);const payload={...q,prev_shares:old??null,prev_share_date:null,day_progress:1};
-      if(snapshotMissing.has(etf.code))stmts.push(env.DB.prepare("INSERT OR IGNORE INTO daily_snapshots(trade_date,code,payload_json,source_ts,source) VALUES(?,?,?,?,?)").bind(date,etf.code,JSON.stringify(payload),String(q.ts),"腾讯公开行情"));
-      if(activityMissing.has(etf.code))stmts.push(env.DB.prepare("INSERT OR IGNORE INTO daily_activity(trade_date,code,amount_yi,volume_lots,shape_json,tail_ratio,complete) VALUES(?,?,?,?,?,?,?)").bind(date,etf.code,q.amount_yi,q.volume_lots,null,null,1));
+    if(marketClosed){
+      const prevRows=await env.DB.prepare(`SELECT s.code,s.shares FROM share_history s JOIN (
+        SELECT code,MAX(trade_date) AS trade_date FROM share_history
+        WHERE trade_date<? AND source <> '腾讯行情份额字段' GROUP BY code
+      ) p ON p.code=s.code AND p.trade_date=s.trade_date WHERE s.source <> '腾讯行情份额字段'`).bind(date).all<{code:string;shares:number}>();
+      const previous=new Map((prevRows.results||[]).map(r=>[r.code,Number(r.shares)]));
+      const [existingSnapshots,existingActivity]=await Promise.all([
+        env.DB.prepare("SELECT code FROM daily_snapshots WHERE trade_date=?").bind(date).all<{code:string}>(),
+        env.DB.prepare("SELECT code FROM daily_activity WHERE trade_date=?").bind(date).all<{code:string}>(),
+      ]);
+      const snapshotMissing=new Set(missingEtfsForDate(etfs,existingSnapshots.results||[]).map(e=>e.code));
+      const activityMissing=new Set(missingEtfsForDate(etfs,existingActivity.results||[]).map(e=>e.code));
+      for(const etf of etfs){const q=quotes.get(etf.code);if(!q)continue;const old=previous.get(etf.code);const payload={...q,prev_shares:old??null,prev_share_date:null,day_progress:1};
+        // A quote captured after the close is the only complete same-day price
+        // available to this Worker run. Persist it before tomorrow's snapshot
+        // becomes the latest one; otherwise yesterday's money estimate would
+        // lose its price and degrade to a dash in the historical table.
+        if(Number(q.price)>0)stmts.push(env.DB.prepare(`INSERT INTO daily_closes(trade_date,code,close_price,volume_lots,turnover_yi,source)
+          VALUES(?,?,?,?,?,?) ON CONFLICT(trade_date,code) DO UPDATE SET
+            close_price=excluded.close_price,volume_lots=excluded.volume_lots,
+            turnover_yi=excluded.turnover_yi,source=excluded.source`)
+          .bind(date,etf.code,q.price,q.volume_lots,q.amount_yi,"腾讯收盘行情"));
+        if(snapshotMissing.has(etf.code))stmts.push(env.DB.prepare("INSERT OR IGNORE INTO daily_snapshots(trade_date,code,payload_json,source_ts,source) VALUES(?,?,?,?,?)").bind(date,etf.code,JSON.stringify(payload),String(q.ts),"腾讯公开行情"));
+        if(activityMissing.has(etf.code))stmts.push(env.DB.prepare("INSERT OR IGNORE INTO daily_activity(trade_date,code,amount_yi,volume_lots,shape_json,tail_ratio,complete) VALUES(?,?,?,?,?,?,?)").bind(date,etf.code,q.amount_yi,q.volume_lots,null,null,1));
+      }
     }
     for(let i=0;i<stmts.length;i+=80)await env.DB.batch(stmts.slice(i,i+80));
     const coverage=currentCoverageCount;
-    const message=full?`已采集 ${core.length} 只核心 ETF 行情与官方份额`:`已采集行情；官方份额未齐（${coverage}/${core.length}），${sourceErrors.length?"数据源暂时超时；":""}后续定时继续补采`;
+    const message=marketClosed
+      ?(full?`已采集 ${core.length} 只核心 ETF 行情与官方份额`:`已采集行情；官方份额未齐（${coverage}/${core.length}），${sourceErrors.length?"数据源暂时超时；":""}后续定时继续补采`)
+      :`盘中检查完成；未写入盘中快照${retryDates.length?`，已补采 ${retryDates.length} 个历史日期`:""}`;
     await run("success",message,date);
     // Invalidate the pre-computed API payloads and their edge-cache keys.
     await bumpDataRevision(env.DB);

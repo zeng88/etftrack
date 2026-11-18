@@ -534,47 +534,37 @@ def update_once(path: str | None = None) -> dict[str, Any]:
             if daily_errors:
                 print("日收盘数据补齐提示：" + "；".join(f"{code} {error}" for code, error in list(daily_errors.items())[:8]))
 
-        # Fill the gap since the last saved close from the exchanges' published share data.
-        # A bootstrap snapshot is only a reference sample, so include its date in the first
-        # official backfill instead of treating it as a verified share-history baseline.
-        # Exchange share figures may publish after the close. Retry the latest
-        # quote date when its share row is still only the intraday Tencent value.
-        # This also lets the next-morning scheduled run complete yesterday's data.
-        if latest and (latest < trade_date or pending_quote_date):
-            from datetime import date, timedelta
-            latest_day = date.fromisoformat(f"{latest[:4]}-{latest[4:6]}-{latest[6:8]}")
-            start_day = latest_day if pending_quote_date else latest_day + timedelta(days=1)
-            end_day = date.fromisoformat(f"{trade_date[:4]}-{trade_date[4:6]}-{trade_date[6:8]}")
-            if not pending_quote_date:
-                end_day -= timedelta(days=1)
-            if reference_date and reference_date < trade_date:
-                reference_day = date.fromisoformat(f"{reference_date[:4]}-{reference_date[4:6]}-{reference_date[6:8]}")
-                if reference_day <= end_day:
-                    start_day = min(start_day, reference_day)
-            start, end = start_day.isoformat(), end_day.isoformat()
-            if start <= end:
-                backfill_rows, backfill_errors = backfill_exchange_shares(etfs, start, end)
-                if backfill_rows:
-                    conn = connect(path or DB_PATH)
-                    try:
-                        conn.executemany(
-                            """INSERT OR REPLACE INTO share_history(trade_date,code,shares,observed_at,source)
-                               VALUES(?,?,?,?,?)""",
-                            [(day, code, shares, datetime.now(TZ).isoformat(timespec="seconds"), source)
-                             for day, code, shares, source in backfill_rows],
-                        )
-                        if reference_date:
-                            core_codes = {item["code"] for item in etfs if item["group"] == "core"}
-                            covered = {row[0] for row in conn.execute(
-                                "SELECT code FROM share_history WHERE trade_date=? AND source!='参考快照'",
-                                (reference_date,),
-                            )}
-                            if core_codes.issubset(covered):
-                                conn.execute("DELETE FROM app_meta WHERE key='bootstrap_reference_date'")
-                    finally:
-                        conn.close()
-                if backfill_errors:
-                    print("份额历史补齐提示：" + "；".join(backfill_errors[:8]))
+        # Always ask the exchanges for the quote date as well as the latest
+        # incomplete date. At 08:30 the quote still carries yesterday's date;
+        # the old range calculation made start=trade_date and end=trade_date-1,
+        # so yesterday could never be confirmed until the next evening.
+        retry_dates = [trade_date]
+        if latest and latest != trade_date and pending_quote_date:
+            retry_dates.insert(0, latest)
+        for retry_date in dict.fromkeys(retry_dates):
+            retry_iso = f"{retry_date[:4]}-{retry_date[4:6]}-{retry_date[6:8]}"
+            backfill_rows, backfill_errors = backfill_exchange_shares(etfs, retry_iso, retry_iso)
+            if backfill_rows:
+                conn = connect(path or DB_PATH)
+                try:
+                    conn.executemany(
+                        """INSERT OR REPLACE INTO share_history(trade_date,code,shares,observed_at,source)
+                           VALUES(?,?,?,?,?)""",
+                        [(day, code, shares, datetime.now(TZ).isoformat(timespec="seconds"), source)
+                         for day, code, shares, source in backfill_rows],
+                    )
+                    if reference_date == retry_date:
+                        core_codes = {item["code"] for item in etfs if item["group"] == "core"}
+                        covered = {row[0] for row in conn.execute(
+                            "SELECT code FROM share_history WHERE trade_date=? AND source!='参考快照'",
+                            (reference_date,),
+                        )}
+                        if core_codes.issubset(covered):
+                            conn.execute("DELETE FROM app_meta WHERE key='bootstrap_reference_date'")
+                finally:
+                    conn.close()
+            if backfill_errors:
+                print(f"份额补采 {retry_date} 提示：" + "；".join(backfill_errors[:8]))
 
         newest_stamp = max(quote["ts"] for quote in quotes.values())
         if latest == trade_date:

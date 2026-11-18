@@ -22,7 +22,7 @@ function quote(code, name, tcode, stamp) {
 }
 
 function createDb(etfs) {
-  const state = { etfs, shares: new Map(), snapshots: new Map(), activity: new Map(), runs: [], shareWrites: 0 };
+  const state = { etfs, shares: new Map(), snapshots: new Map(), activity: new Map(), closes: new Map(), runs: [], shareWrites: 0 };
   const prepare = sql => {
     const statement = { sql, args: [], bind(...args) { this.args = args; return this; } };
     statement.all = async () => {
@@ -71,6 +71,8 @@ function createDb(etfs) {
           state.snapshots.set(`${trade_date}:${code}`, { trade_date, code });
         } else if (statement.sql.includes("daily_activity")) {
           state.activity.set(`${trade_date}:${code}`, { trade_date, code });
+        } else if (statement.sql.includes("daily_closes")) {
+          state.closes.set(`${trade_date}:${code}`, { trade_date, code, close_price: value });
         }
       }
       return [];
@@ -106,6 +108,7 @@ test("retry fills missing official ETF shares without rewriting the saved close 
   assert.equal(first.coverage, 1);
   assert.equal(state.snapshots.size, 2);
   assert.equal(state.activity.size, 2);
+  assert.equal(state.closes.size, 2);
   assert.equal(state.shareWrites, 1);
 
   const second = await collectConfirmedDaily({ DB: db }, timestamp + 60_000);
@@ -115,4 +118,25 @@ test("retry fills missing official ETF shares without rewriting the saved close 
   assert.equal(state.activity.size, 2);
   assert.equal(state.shareWrites, 2);
   assert.equal(state.shares.get("20261116:159919").source, "深交所 ETF 规模披露");
+});
+
+test("intraday retry does not persist the current session as a close", async t => {
+  const etfs = [
+    { code: "510300", tcode: "sh510300", name: "沪深300ETF", group_name: "core" },
+    { code: "159919", tcode: "sz159919", name: "沪深300ETF嘉实", group_name: "core" },
+  ];
+  const { db, state } = createDb(etfs);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async input => {
+    const url = String(input);
+    if (url.startsWith("https://qt.gtimg.cn/")) return new Response(quote("510300", "沪深300ETF", "sh510300", "20261118133000") + quote("159919", "沪深300ETF嘉实", "sz159919", "20261118133000"));
+    throw new Error(`unexpected URL ${url}`);
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const result = await collectConfirmedDaily({ DB: db }, Date.parse("2026-11-18T05:30:00Z"));
+  assert.equal(result.confirmed_shares, false);
+  assert.equal(state.snapshots.size, 0);
+  assert.equal(state.activity.size, 0);
+  assert.equal(state.closes.size, 0);
 });

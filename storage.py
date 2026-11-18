@@ -13,6 +13,12 @@ ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
 DB_PATH = DATA_DIR / "etf_tracker.sqlite3"
 BOOTSTRAP_PATH = DATA_DIR / "bootstrap.json"
+MAX_PARTIAL_SHARE_GAPS = 2
+
+
+def has_usable_share_coverage(expected: int, received: int) -> bool:
+    """Permit a labelled estimate when at most two funds lag disclosure."""
+    return expected > 0 and received >= max(1, expected - MAX_PARTIAL_SHARE_GAPS)
 
 
 def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
@@ -207,16 +213,15 @@ def load_dashboard(code: str = "510300", days: int = 30) -> dict[str, Any]:
             # Include each ETF from its first published share observation (newer ETFs
             # did not exist for the full historical window). Never forward-fill gaps.
             active_codes = [code for code in core_codes if first_seen.get(code, date) <= date]
-            if not active_codes or not all(code in by_date[date] for code in active_codes):
-                continue
             changes = share_deltas.get(date, {})
-            if not all(code in changes for code in active_codes):
+            covered_codes = [code for code in active_codes if code in by_date[date] and code in changes]
+            if not has_usable_share_coverage(len(active_codes), len(covered_codes)):
                 continue
-            total = sum(by_date[date][code] for code in active_codes)
+            total = sum(by_date[date][code] for code in covered_codes)
             pool_history.append({
                 "date": date, "shares_yi": total / 1e8,
-                "delta_yi": sum(changes.values()),
-                "core_count": len(active_codes),
+                "delta_yi": sum(changes[code] for code in covered_codes),
+                "core_count": len(covered_codes), "basket_count": len(active_codes),
             })
 
         # Keep the full range in the API: the two charts have independent range selectors.
@@ -250,7 +255,7 @@ def load_flow_detail(trade_date: str) -> dict[str, Any]:
             """SELECT e.code,e.name,h.shares,prev.shares AS prev_shares,
                       a.amount_yi,a.volume_lots,h.source,c.close_price,snap.payload_json AS snapshot_payload
                FROM etfs e
-               JOIN share_history h ON h.code=e.code AND h.trade_date=?
+               JOIN share_history h ON h.code=e.code AND h.trade_date=? AND h.source <> '腾讯行情份额字段'
                LEFT JOIN share_history prev ON prev.code=e.code AND prev.trade_date=(
                    SELECT MAX(p.trade_date) FROM share_history p
                    WHERE p.code=e.code AND p.trade_date<h.trade_date AND p.source <> '腾讯行情份额字段'
@@ -260,9 +265,13 @@ def load_flow_detail(trade_date: str) -> dict[str, Any]:
                LEFT JOIN daily_snapshots snap ON snap.code=e.code AND snap.trade_date=h.trade_date
                WHERE e.group_name='core' ORDER BY e.code""", (trade_date,)
         ).fetchall()
-        if any(row["source"] == "腾讯行情份额字段" for row in rows):
+        basket_count = conn.execute("""SELECT COUNT(*) FROM etfs e WHERE e.group_name='core' AND EXISTS (
+            SELECT 1 FROM share_history h WHERE h.code=e.code
+              AND h.source <> '腾讯行情份额字段' AND h.trade_date<=?)""",
+            (trade_date,)).fetchone()[0] or len(rows)
+        if not has_usable_share_coverage(basket_count, len(rows)) or any(row["source"] == "腾讯行情份额字段" for row in rows):
             return {
-                "date": trade_date, "core_count": len(rows), "items": [],
+                "date": trade_date, "core_count": len(rows), "basket_count": basket_count, "items": [],
                 "buy_yi": 0.0, "sell_yi": 0.0, "net_yi": 0.0,
                 "volume_yi": None, "amount_yi": None,
                 "volume_coverage": 0, "amount_coverage": 0,
@@ -315,7 +324,7 @@ def load_flow_detail(trade_date: str) -> dict[str, Any]:
                 "volume_yi": volume_yi, "amount_yi": amount_yi, "source": row["source"],
             })
         return {
-            "date": trade_date, "core_count": len(items), "items": items,
+            "date": trade_date, "core_count": len(items), "basket_count": basket_count, "items": items,
             "buy_yi": total_buy_yi, "sell_yi": total_sell_yi,
             "buy_amount_yi": total_buy_amount_yi, "sell_amount_yi": total_sell_amount_yi,
             "buy_count": buy_count, "sell_count": sell_count,
@@ -383,22 +392,23 @@ def load_pool_statistics(days: int = 20) -> list[dict[str, Any]]:
                 continue
             changes = deltas_by_date[trade_date]
             active_codes = [code for code in core_codes if first_seen.get(code, trade_date) <= trade_date]
-            if not active_codes or not all(code in changes for code in active_codes):
+            covered_codes = [code for code in active_codes if code in changes]
+            if not has_usable_share_coverage(len(active_codes), len(covered_codes)):
                 continue
-            change_yi = sum(changes[code] for code in active_codes)
+            change_yi = sum(changes[code] for code in covered_codes)
             prices = prices_by_date.get(trade_date, {}).copy()
             if trade_date == latest_snapshot:
                 prices.update(live_prices)
-            money_complete = all(code in prices for code in active_codes)
-            buy_amount = sum(max(changes[code], 0) * prices[code] for code in active_codes) if money_complete else None
-            sell_amount = sum(abs(min(changes[code], 0)) * prices[code] for code in active_codes) if money_complete else None
+            money_complete = all(code in prices for code in covered_codes)
+            buy_amount = sum(max(changes[code], 0) * prices[code] for code in covered_codes) if money_complete else None
+            sell_amount = sum(abs(min(changes[code], 0)) * prices[code] for code in covered_codes) if money_complete else None
             net_amount = buy_amount - sell_amount if money_complete else None
 
             activity = activity_by_date.get(trade_date, {})
-            turnover_complete = all(code in activity and activity[code]["amount_yi"] is not None for code in active_codes)
-            volume_complete = all(code in activity and activity[code]["volume_lots"] is not None for code in active_codes)
-            turnover = sum(float(activity[code]["amount_yi"]) for code in active_codes) if turnover_complete else None
-            volume_yi = sum(float(activity[code]["volume_lots"]) * 100 / 1e8 for code in active_codes) if volume_complete else None
+            turnover_complete = all(code in activity and activity[code]["amount_yi"] is not None for code in covered_codes)
+            volume_complete = all(code in activity and activity[code]["volume_lots"] is not None for code in covered_codes)
+            turnover = sum(float(activity[code]["amount_yi"]) for code in covered_codes) if turnover_complete else None
+            volume_yi = sum(float(activity[code]["volume_lots"]) * 100 / 1e8 for code in covered_codes) if volume_complete else None
             baseline = sum(amount_history[-20:]) / min(20, len(amount_history)) if amount_history else 0
             multiple = turnover / baseline if turnover is not None and baseline > 0 else None
             if change_yi > 0:
@@ -413,7 +423,7 @@ def load_pool_statistics(days: int = 20) -> list[dict[str, Any]]:
                 "sell_amount_yi": sell_amount, "net_amount_yi": net_amount,
                 "turnover_yi": turnover, "volume_yi": volume_yi,
                 "turnover_multiple": multiple, "signal": signal,
-                "coverage_count": len(active_codes), "basket_count": len(core_codes),
+                "coverage_count": len(covered_codes), "basket_count": len(active_codes),
             })
             if turnover_complete:
                 amount_history.append(turnover)
@@ -476,16 +486,17 @@ def load_flow_overview() -> dict[str, Any]:
         for date in sorted(deltas):
             changes = deltas[date]
             active_codes = [code for code in codes if first_seen.get(code, date) <= date]
-            if date in unconfirmed or not active_codes or not all(code in changes for code in active_codes):
+            covered_codes = [code for code in active_codes if code in changes]
+            if date in unconfirmed or not has_usable_share_coverage(len(active_codes), len(covered_codes)):
                 continue
             day_prices = prices.get(date, {}).copy()
             if date == latest_snapshot:
                 day_prices.update(live_prices)
-            if not all(code in day_prices for code in active_codes):
+            if not all(code in day_prices for code in covered_codes):
                 continue
-            amounts = {code: changes[code] * day_prices[code] for code in active_codes}
+            amounts = {code: changes[code] * day_prices[code] for code in covered_codes}
             daily.append({"date": date, "amount_yi": sum(amounts.values()), "by_code": amounts,
-                          "core_count": len(active_codes)})
+                          "core_count": len(covered_codes), "basket_count": len(active_codes)})
 
         if not daily:
             return {"as_of_date": None, "metrics": [], "indexes": [], "etfs": [], "core_count": len(codes)}
@@ -549,7 +560,10 @@ def load_flow_overview() -> dict[str, Any]:
         daily_matrix = [{"code": etf["code"], "name": etf["name"], "index_name": etf["index_name"],
                          "values": [next((day["by_code"][etf["code"]] for day in daily if day["date"] == date), None)
                                     for date in recent_dates]} for etf in etfs]
-        return {"as_of_date": as_of, "year": year, "core_count": len(codes), "metrics": metrics,
+        latest_coverage = daily[-1]
+        return {"as_of_date": as_of, "year": year, "core_count": len(codes),
+            "coverage_count": latest_coverage["core_count"], "basket_count": latest_coverage["basket_count"],
+            "metrics": metrics,
             "recent_dates": recent_dates, "daily_matrix": daily_matrix, "indexes": indexes, "etfs": etf_rows,
             "method": "区间按日历跨度回溯，交易日数按实际交易记录动态统计，节假日不计。新上市 ETF 从首次披露份额后纳入当日合计；逐只 ETF 份额变化 × 同日收盘价，最新日缺收盘价时使用行情快照。历史每日覆盖数量随篮子中新上市 ETF 逐步纳入而变化。",
             "holding_note": "2025年报披露份额仅代表历史披露时点；ETF总份额是全市场发行量，不代表国家队当前持有。申赎估算不能识别实际交易账户。"}

@@ -56,7 +56,8 @@
   function renderFlowOverview(){
     const data=flowOverview,cards=$("flow-metric-cards");
     if(!data?.metrics?.length){$("flow-overview-date").textContent="暂无完整金额数据";$("flow-overview-meta").textContent="等待份额与价格数据完整";cards.innerHTML='<div class="flow-metric-card flow-metric-loading">当前没有满足完整口径的交易日数据</div>';$("flow-index-rows").innerHTML='<tr><td colspan="8" class="empty-row">暂无完整数据</td></tr>';$("flow-etf-rows").innerHTML='<tr><td colspan="8" class="empty-row">暂无完整数据</td></tr>';return;}
-    $("flow-overview-date").textContent=`最新完整交易日 ${dateLabel(data.as_of_date)}`;$("flow-overview-meta").textContent=`核心观察池 ${data.core_count} 只 · 金额单位：亿元`;
+    const overviewCoverage=Number(data.coverage_count)||0,overviewBasket=Number(data.basket_count)||Number(data.core_count)||0;
+    $("flow-overview-date").textContent=`最新交易日 ${dateLabel(data.as_of_date)}`;$("flow-overview-meta").textContent=`核心观察池 ${data.core_count} 只${overviewBasket>overviewCoverage?` · 最新日 ${overviewCoverage}/${overviewBasket} 只已披露`:""} · 金额单位：亿元`;
     cards.innerHTML=data.metrics.map(metric=>{const value=Number(metric.value_yi)||0,action=value>0?"净买入":value<0?"净卖出":"买卖接近",cls=tone(value);const suffix=metric.key==="latest"?dateLabel(metric.as_of_date):`${number(metric.trading_days,0)}个交易日`;return `<article class="flow-metric-card ${cls}"><span>${esc(metric.label)}（${esc(suffix)}）</span><strong>${signed(value,2)}</strong><small>${action} 亿元</small></article>`;}).join("");
     const valueCell=value=>`<td class="right money ${tone(value)}">${signed(value,2)}</td>`;
     $("flow-index-rows").innerHTML=(data.indexes||[]).map(row=>`<tr><td><b>${esc(row.index_name)}</b></td><td class="right">${number(row.etf_count,0)}</td><td class="right money">${number(row.shares_yi,1)}</td><td class="right money">${row.reported_huijin_count?number(row.reported_huijin_yi,1):"—"}${row.reported_huijin_count&&row.reported_huijin_count<row.etf_count?`<small class="subnote">${row.reported_huijin_count}/${row.etf_count}只已披露</small>`:""}</td>${valueCell(row.latest_yi)}${valueCell(row.week_yi)}${valueCell(row.month_yi)}${valueCell(row.ytd_yi)}</tr>`).join("")||'<tr><td colspan="8" class="empty-row">暂无品种汇总</td></tr>';
@@ -88,8 +89,9 @@
       const label=run.status==="failed"?(offdayFailure?"非交易日补采超时，保留有效数据":"定时采集失败"):run.message?.includes("官方份额未齐")?"行情已更新，官方份额待补":"采集成功";
       $("collection-last-run").textContent=`${label} · ${timeLabel(run.finished_at)}`;
     }else $("collection-last-run").textContent="尚无采集记录";
-    const confirmed=(dashboard.history?.pool||[]).filter(row=>row.delta_yi!=null).at(-1)?.date;
-    $("share-data-date").textContent=confirmed?`最新完整确认份额：${dateLabel(confirmed)}`:"尚无完整确认份额记录";
+    const confirmedRow=(dashboard.history?.pool||[]).filter(row=>row.delta_yi!=null).at(-1);
+    const confirmedCoverage=Number(confirmedRow?.core_count)||0,confirmedBasket=Number(confirmedRow?.basket_count)||confirmedCoverage;
+    $("share-data-date").textContent=confirmedRow?`最新确认份额：${dateLabel(confirmedRow.date)}${confirmedBasket>confirmedCoverage?` · ${confirmedCoverage}/${confirmedBasket} 只已披露`:""}`:"尚无确认份额记录";
   }
   function renderSummary(){
     const s=dashboard.summary||{},ratio=Number(s.ratio)||0;
@@ -202,7 +204,7 @@
     selectedFlowDate=date;currentFlowDetail=null;renderFlowChart();const panel=$("flow-detail");panel.hidden=false;$("detail-date").textContent=`${dateLabel(date)} · 正在读取…`;$("detail-rows").innerHTML='<tr><td colspan="6" class="empty-row">正在读取所选日期的 ETF 明细…</td></tr>';
     try{
       const r=await fetch(`/api/flow-detail?date=${encodeURIComponent(date)}`,{cache:"no-store"}),d=await r.json();if(!r.ok)throw new Error(d.error||"读取失败");
-      currentFlowDetail=d;$("detail-date").textContent=dateLabel(d.date);$("detail-buy").textContent=d.buy_yi?flowLabel(d.buy_yi):"0.00 亿份";$("detail-sell").textContent=d.sell_yi?flowLabel(-d.sell_yi):"0.00 亿份";
+      currentFlowDetail=d;$("detail-date").textContent=`${dateLabel(d.date)}${Number(d.basket_count)>Number(d.core_count)?` · ${d.core_count}/${d.basket_count} 只已披露`:""}`;$("detail-buy").textContent=d.buy_yi?flowLabel(d.buy_yi):"0.00 亿份";$("detail-sell").textContent=d.sell_yi?flowLabel(-d.sell_yi):"0.00 亿份";
       const estimateLabel=(value,coverage,count)=>value==null?"暂无完整估值":`${number(value,2)} 亿${count>coverage?`（${coverage}/${count} 只可估）`:""}`;
       $("detail-buy-amount").textContent=estimateLabel(d.buy_amount_yi,d.buy_amount_coverage,d.buy_count);
       $("detail-sell-amount").textContent=estimateLabel(d.sell_amount_yi,d.sell_amount_coverage,d.sell_count);
@@ -231,7 +233,8 @@
       const netAmount=row.buy_amount_yi==null||row.sell_amount_yi==null?null:Number(row.buy_amount_yi)-Number(row.sell_amount_yi);
       const netClass=netAmount==null?"net-unknown":netAmount>0?"net-buy":netAmount<0?"net-sell":"net-flat";
       const netText=netAmount==null?"—":`${signed(netAmount,2)} 亿`;
-      const signal=delta>0?"估算净申购":delta<0?"估算净赎回":"份额持平";
+      const coverage=Number(row.coverage_count)||0,basket=Number(row.basket_count)||coverage;
+      const signal=`${delta>0?"估算净申购":delta<0?"估算净赎回":"份额持平"}${coverage<basket?` · ${coverage}/${basket} 只`:""}`;
       const turnover=row.turnover_multiple==null?"—":`${number(row.turnover_multiple,1)}×`;
       return `<tr class="stats-row ${changeClass}" data-date="${esc(row.date)}" tabindex="0" role="button" title="点击查看 ${shortDate(row.date)} 的 ETF 明细"><td class="stats-date">${esc(shortDate(row.date))}</td><td>${esc(row.pool_name)}</td><td class="right stats-tinted">${signed(delta,2)} 亿份</td><td class="right stats-buy ${Number(row.buy_amount_yi)>0?"active":""}">${buyText}</td><td class="right stats-sell ${Number(row.sell_amount_yi)>0?"active":""}">${sellText}</td><td class="right stats-net ${netClass}" title="买入总金额估算减去赎回总金额估算">${netText}</td><td class="right">${turnover}</td><td><span class="signal-tag">${signal}</span></td></tr>`;
     }).join("");
@@ -266,6 +269,6 @@
   setInterval(refreshLiveFlow,20000);
   setInterval(refreshLiveTurnover,20000);
   const refreshPersistedData=async()=>{if(document.hidden||dashboardRefreshBusy)return;dashboardRefreshBusy=true;try{await loadDashboard();}catch(error){console.warn("定时读取统计数据失败",error);}finally{dashboardRefreshBusy=false;}};
-  setInterval(refreshPersistedData,300000);
+  setInterval(refreshPersistedData,60000);
   document.addEventListener("visibilitychange",()=>{if(!document.hidden){refreshPersistedData();refreshLiveFlow();}});
 })();

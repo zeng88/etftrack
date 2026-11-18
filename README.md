@@ -6,7 +6,7 @@
 
 - Finder 双击 `start.command`，自动启动服务并打开 `http://127.0.0.1:8765`。
 - 或运行 `npm run dev`（等价于 `python3 app.py`）。数据库为 `data/etf_tracker.sqlite3`，首次启动从 `data/bootstrap.json` 初始化。
-- 本地服务运行期间会按工作日北京时间 23:15 尝试更新；页面盘中行情约每 20 秒刷新。关闭服务后本机不再定时采集。
+- 本地服务运行期间会按工作日北京时间 22:30、23:15 采集收盘数据，次日 00:30、08:30、13:30 继续补采；服务启动时也会先补采一次。页面盘中行情约每 20 秒刷新，统计数据约每 60 秒刷新。关闭服务后本机不再定时采集。
 - SQLite schema 由 `migrations/*.sql` 版本化；Python 服务启动时自动应用未执行迁移。也可以手动运行 `npm run db:migrate:local`。
 
 ### 补齐 34 只跟踪 ETF 的近一年历史
@@ -42,11 +42,10 @@ Wrangler 的 Workerd 本地运行时要求 macOS 13.5+；本机 macOS 12 不支�
 3. 将当前本机历史数据幂等合并到远端 D1（不会清空数据库；执行前先检查目标表）：
 
    ```sh
-   npm run db:export
    npm run db:sync:remote -- --remote
    ```
 
-   手动生成的 SQL 位于 `data/d1-import.sql`，被 Git 忽略。后续云端数据合并回本机：`npm run db:sync:local`；这会导出远端 D1 并按主键合并到本机 SQLite，不删除本机记录。
+   `push-remote` 会先从当前本机 SQLite 重新生成 `data/d1-import.sql`（被 Git 忽略），避免复用过期导入文件覆盖云端新数据。需要先检查 SQL 时也可单独运行 `npm run db:export`，再把生成的文件作为参数传入同步脚本。后续云端数据合并回本机：`npm run db:sync:local`；这会导出远端 D1 并按主键合并到本机 SQLite，不删除本机记录。
 
 4. 部署：
 
@@ -65,7 +64,7 @@ Wrangler 的 Workerd 本地运行时要求 macOS 13.5+；本机 macOS 12 不支�
 
 API Token 只保存在 GitHub Secrets，不能写入代码或提交到仓库。Cloudflare 原生 Workers Builds 若也启用，推送时可能重复部署；采用本 GitHub Actions 工作流后，可在 Worker 的 **Settings → Builds** 关闭原生 builds。
 
-Worker 绑定 D1 和 `static/`，并配置 UTC 工作日 15:15（北京时间 23:15）计划采集。盘中 API 返回腾讯公开行情估算，不将行情份额当成交易所确认的正式份额历史。正式份额只有当日核心 ETF 全部从交易所取齐时才写入；缺项时保留最近完整确认日。
+Worker 绑定 D1 和 `static/`，并按北京时间 22:30、23:15 采集收盘行情，次日 00:30、08:30、13:30 继续补采交易所份额。盘中 API 返回腾讯公开行情估算，不将行情份额当成交易所确认的正式份额历史。交易所份额按实际披露写入；核心 ETF 缺 1-2 只时先按已披露数量展示并标注覆盖（如 33/34），后续定时任务继续补采；缺口更大时保留最近完整确认日。
 
 云端统计接口（`/api/dashboard`、`/api/pool-stats`、`/api/flow-overview`、`/api/flow-detail`）的聚合结果按 `app_meta.data_revision` 缓存在 D1 单行 `api_cache` 表中；常规请求只读取版本和缓存行，不再重复扫描历史份额/成交表。定时采集成功或本地同步完成后会更新 `data_revision`，使边缘缓存和 `api_cache` 自动失效。实时估算接口只使用静态 ETF 名单和腾讯公开行情，不读取 D1。
 

@@ -136,14 +136,16 @@ def _next_scheduled_run(now: datetime) -> tuple[datetime, str]:
     for offset in range(8):
         day = (now + timedelta(days=offset)).date()
         weekday = day.weekday()
-        if weekday <= 5:  # Monday-Saturday: retry prior session's official shares.
-            morning = datetime.combine(day, datetime.min.time(), TZ).replace(hour=8, minute=30)
-            if morning > now:
-                candidates.append((morning, "次日份额补采"))
+        if weekday <= 5:  # Monday-Saturday: retry the prior session's official shares.
+            for hour, minute in ((0, 30), (8, 30), (13, 30)):
+                retry = datetime.combine(day, datetime.min.time(), TZ).replace(hour=hour, minute=minute)
+                if retry > now:
+                    candidates.append((retry, "份额补采"))
         if weekday <= 4:  # Monday-Friday: capture the current session after close.
-            close = datetime.combine(day, datetime.min.time(), TZ).replace(hour=23, minute=15)
-            if close > now:
-                candidates.append((close, "收盘行情采集"))
+            for hour, minute in ((22, 30), (23, 15)):
+                close = datetime.combine(day, datetime.min.time(), TZ).replace(hour=hour, minute=minute)
+                if close > now:
+                    candidates.append((close, "收盘行情采集"))
     return min(candidates, key=lambda item: item[0])
 
 
@@ -155,17 +157,26 @@ def _scheduler() -> None:
         # macOS is asleep, which would silently postpone the task past its target.
         while (target - datetime.now(TZ)).total_seconds() > 0:
             time.sleep(15)
-        result = update_once()
-        print(f"{task_name}：{result.get('status')} · {result.get('message')}")
+        try:
+            result = update_once()
+            print(f"{task_name}：{result.get('status')} · {result.get('message')}")
+        except Exception as exc:
+            # Never let an unexpected scheduler exception silently kill all
+            # later retries. The next loop will calculate a fresh target.
+            print(f"{task_name}异常：{type(exc).__name__}: {exc}")
 
 
 def main() -> None:
     seeded = initialize_db()
     print("SQLite 初始化完成" + ("，已导入参考历史" if seeded else "，沿用现有数据库"))
+    # A laptop can sleep through 23:15. On the first start or restart, use the
+    # upstream quote date to catch up the last session without waiting for the
+    # next scheduled slot.
+    threading.Thread(target=update_once, name="startup-share-recovery", daemon=True).start()
     threading.Thread(target=_scheduler, name="etf-close-scheduler", daemon=True).start()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"汪汪队ETF跟踪器：http://{HOST}:{PORT}")
-    print("本地服务运行期间会在交易日收盘后 23:15 更新，并于次日 08:30 补采交易所份额；按 Ctrl+C 停止。")
+    print("本地服务运行期间会在交易日 22:30、23:15 采集，并于次日 00:30、08:30、13:30 补采交易所份额；按 Ctrl+C 停止。")
     try:
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:

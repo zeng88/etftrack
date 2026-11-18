@@ -18,7 +18,11 @@ case "${1:-}" in
       exit 2
     fi
     IMPORT_FILE="${3:-data/d1-import.sql}"
-    if [[ ! -f "$IMPORT_FILE" ]]; then
+    if [[ -n "${3:-}" ]]; then
+      echo "使用指定的导入文件：${IMPORT_FILE}"
+    else
+      # Always rebuild from the current SQLite database. Reusing a stale
+      # data/d1-import.sql can silently overwrite newer D1 rows.
       python3 scripts/sqlite_to_d1.py --output "$IMPORT_FILE"
     fi
     echo "目标 D1：etf（${D1_DATABASE_ID:-wrangler.jsonc 中配置的 ID}）"
