@@ -165,11 +165,11 @@ export async function collectConfirmedDaily(env:Env, timestamp:number){
       "SELECT MAX(trade_date) AS d FROM daily_snapshots WHERE trade_date<?",
     ).bind(date).first<{d:string|null}>())?.d||null;
     const pendingDates=(pending.results||[]).map(row=>row.trade_date);
-    if(!marketClosed){
-      // Cover the previous session even when its snapshot row is missing.
-      for(const day of [previousSession,previousWeekday(date)]){
-        if(day&&!pendingDates.includes(day))pendingDates.push(day);
-      }
+    // Always include the previous weekday, even when its snapshot row is
+    // missing. With newest-first retries, this protects the session users
+    // look at from being starved by old bootstrap gaps.
+    for(const day of [previousSession,previousWeekday(date)]){
+      if(day&&!pendingDates.includes(day))pendingDates.push(day);
     }
     const retryDates=shareRetryDates(date,marketClosed?currentAlreadyComplete:true,pendingDates);
     const newOfficialByDate=new Map<string,Map<string,{shares:number;source:string}>>();

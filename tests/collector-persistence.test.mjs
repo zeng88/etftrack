@@ -91,6 +91,10 @@ test("retry fills missing official ETF shares without rewriting the saved close 
     { code: "159919", tcode: "sz159919", name: "沪深300ETF嘉实", group_name: "core" },
   ];
   const { db, state } = createDb(etfs);
+  // The scheduler always re-checks the previous weekday; keep it complete so
+  // this test focuses on filling the current session.
+  state.shares.set("20261113:510300", { trade_date: "20261113", code: "510300", shares: 1, observed_at: "x", source: "上交所 ETF 规模披露" });
+  state.shares.set("20261113:159919", { trade_date: "20261113", code: "159919", shares: 1, observed_at: "x", source: "深交所 ETF 规模披露" });
   let szCalls = 0;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async input => {
