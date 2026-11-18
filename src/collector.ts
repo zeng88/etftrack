@@ -2,6 +2,8 @@ import { bumpDataRevision, type Env } from "./db.ts";
 import { LIVE_ETFS } from "./etf-list.ts";
 
 const QUOTE_URL = "https://qt.gtimg.cn/q=";
+const EASTMONEY_LIST_URL = "https://push2.eastmoney.com/api/qt/ulist.np/get";
+const EASTMONEY_STOCK_URL = "https://push2.eastmoney.com/api/qt/stock/get";
 const SINA_KLINE_URL="https://quotes.sina.cn/cn/api/jsonp.php/=/CN_MarketDataService.getKLineData";
 const USER_AGENT = "Mozilla/5.0 (compatible; etftrack/1.0)";
 
@@ -106,6 +108,60 @@ async function getText(url:string,referer="",timeoutMs=18000){
   if(!response.ok)throw new Error(`行情源 HTTP ${response.status}`);return response.text();
 }
 
+function eastmoneySecid(etf:{code:string;tcode:string}){
+  return `${etf.tcode.startsWith("sh")?"1":"0"}.${etf.code}`;
+}
+function eastmoneyTime(seconds:number){
+  if(!Number.isFinite(seconds)||seconds<=0)return "";
+  const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).formatToParts(new Date(seconds*1000));
+  const get=(type:string)=>parts.find(part=>part.type===type)?.value||"";
+  const hour=get("hour")==="24"?"00":get("hour");
+  return `${get("year")}${get("month")}${get("day")}${hour}${get("minute")}${get("second")}`;
+}
+export async function fetchEastmoneyQuotes(etfs:{code:string;tcode:string}[]){
+  const params=new URLSearchParams({fltt:"2",secids:etfs.map(eastmoneySecid).join(","),
+    fields:"f2,f3,f5,f6,f12,f14,f18,f20,f124"});
+  const body=JSON.parse(await getText(`${EASTMONEY_LIST_URL}?${params}`,"https://quote.eastmoney.com/"));
+  const diff=body?.data?.diff;
+  if(!Array.isArray(diff)||!diff.length)throw new Error("东方财富行情未返回数据");
+  const quotes=new Map<string,Record<string,unknown>>();
+  for(const row of diff){
+    const code=String(row.f12||""),price=Number(row.f2),ts=eastmoneyTime(Number(row.f124));
+    if(!code||!Number.isFinite(price)||price<=0||ts.length<14)continue;
+    quotes.set(code,{code,name:String(row.f14||""),price,prev_close:Number(row.f18)||0,
+      volume_lots:Number(row.f5)||0,outer_lots:0,inner_lots:0,date:ts.slice(0,8),ts,
+      pct:Number(row.f3)||0,amount_yi:(Number(row.f6)||0)/1e8,turnover:0,
+      mktcap_yi:(Number(row.f20)||0)/1e8,shares:0});
+  }
+  return quotes;
+}
+export async function fetchEastmoneyShares(code:string,tcode:string){
+  const params=new URLSearchParams({secid:`${tcode.startsWith("sh")?"1":"0"}.${code}`,fields:"f84"});
+  try{
+    const body=JSON.parse(await getText(`${EASTMONEY_STOCK_URL}?${params}`,"https://quote.eastmoney.com/",7000));
+    const shares=Number(body?.data?.f84);
+    return Number.isFinite(shares)&&shares>0?shares:null;
+  }catch{return null;}
+}
+export async function fetchScheduledQuotes(etfs:{code:string;tcode:string;group_name?:string}[]){
+  const core=etfs.filter(etf=>etf.group_name==="core");
+  const usable=(quotes:Map<string,Record<string,unknown>>)=>{
+    if(core.some(etf=>!quotes.has(etf.code)))return false;
+    const dates=new Set(core.map(etf=>String(quotes.get(etf.code)?.date||"")));
+    return dates.size===1&&Boolean([...dates][0]);
+  };
+  try{
+    const quotes=decodeTencent(await getText(QUOTE_URL+etfs.map(etf=>etf.tcode).join(",")));
+    if(!usable(quotes))throw new Error("腾讯行情覆盖不完整或日期不一致");
+    return {quotes,source:"腾讯公开行情"};
+  }catch(error){
+    console.warn("Tencent quotes unavailable; falling back to Eastmoney",error);
+    const quotes=await fetchEastmoneyQuotes(etfs);
+    if(!usable(quotes))throw new Error("东方财富行情覆盖不完整或日期不一致");
+    return {quotes,source:"东方财富行情兜底"};
+  }
+}
+
 export async function fetchLiveFlow(){
   const results=LIVE_ETFS;
   if(!results.length)throw new Error("重点 ETF 名单为空");
@@ -134,7 +190,7 @@ export async function collectConfirmedDaily(env:Env, timestamp:number){
   const run=async(status:string,message:string,date=scheduledDate)=>env.DB.prepare("INSERT INTO collection_runs(started_at,finished_at,status,trade_date,message,source) VALUES(?,?,?,?,?,?)").bind(started,new Date().toISOString(),status,date,message,"Cloudflare Worker Cron").run();
   try{
     const {results:etfs=[]}=await env.DB.prepare("SELECT code,tcode,name,group_name FROM etfs ORDER BY code").all<{code:string;tcode:string;name:string;group_name:string}>();
-    const raw=await getText(QUOTE_URL+etfs.map(e=>e.tcode).join(","));const quotes=decodeTencent(raw);
+    const {quotes,source:quoteSource}=await fetchScheduledQuotes(etfs);
     const core=etfs.filter(e=>e.group_name==="core");
     if(core.some(e=>!quotes.has(e.code)))throw new Error("未获取到完整的核心 ETF 行情");
     const quoteDates=new Set(core.map(e=>String(quotes.get(e.code)!.date)));
@@ -173,12 +229,14 @@ export async function collectConfirmedDaily(env:Env, timestamp:number){
     }
     const retryDates=shareRetryDates(date,marketClosed?currentAlreadyComplete:true,pendingDates);
     const newOfficialByDate=new Map<string,Map<string,{shares:number;source:string}>>();
+    const existingByDate=new Map<string,Set<string>>();
     const coverageByDate=new Map<string,number>();
     const sourceErrors:string[]=[];
     for(const retryDate of retryDates){
       const retryISO=`${retryDate.slice(0,4)}-${retryDate.slice(4,6)}-${retryDate.slice(6,8)}`;
       const existing=await env.DB.prepare("SELECT code FROM share_history WHERE trade_date=? AND source IN ('上交所 ETF 规模披露','深交所 ETF 规模披露')")
         .bind(retryDate).all<{code:string}>();
+      existingByDate.set(retryDate,new Set((existing.results||[]).map(row=>row.code)));
       const missing=missingEtfsForDate(core,existing.results||[]);
       const official=new Map<string,{shares:number;source:string}>();
       const sh=missing.filter(e=>e.tcode.startsWith("sh"));
@@ -205,10 +263,24 @@ export async function collectConfirmedDaily(env:Env, timestamp:number){
     }
     const currentCoverageCount=coverageByDate.get(date)??Number(currentCoverage?.count||0);
     const full=marketClosed&&currentCoverageCount===core.length;
+    // A single ETF can stay undisclosed for days. Fill the current session's
+    // remaining core codes from Eastmoney fund shares, marked as a fallback so
+    // a later exchange disclosure can overwrite them.
+    const fallbackRows:{code:string;shares:number}[]=[];
+    if(marketClosed&&currentCoverageCount<core.length){
+      const officialCodes=new Set<string>([...(existingByDate.get(date)||[]),...(newOfficialByDate.get(date)?.keys()||[])]);
+      const missing=core.filter(etf=>!officialCodes.has(etf.code)).slice(0,10);
+      const fetched=await Promise.all(missing.map(async etf=>({code:etf.code,shares:await fetchEastmoneyShares(etf.code,etf.tcode)})));
+      for(const item of fetched)if(item.shares)fallbackRows.push({code:item.code,shares:item.shares});
+    }
     const stmts=[];
     for(const [retryDate,rows] of newOfficialByDate){for(const [code,x] of rows)stmts.push(env.DB.prepare(`INSERT INTO share_history(trade_date,code,shares,observed_at,source) VALUES(?,?,?,?,?)
       ON CONFLICT(trade_date,code) DO UPDATE SET shares=excluded.shares,observed_at=excluded.observed_at,source=excluded.source`)
       .bind(retryDate,code,x.shares,new Date().toISOString(),x.source));}
+    for(const row of fallbackRows)stmts.push(env.DB.prepare(`INSERT INTO share_history(trade_date,code,shares,observed_at,source) VALUES(?,?,?,?,?)
+      ON CONFLICT(trade_date,code) DO UPDATE SET shares=excluded.shares,observed_at=excluded.observed_at,source=excluded.source
+      WHERE share_history.source NOT IN ('上交所 ETF 规模披露','深交所 ETF 规模披露')`)
+      .bind(date,row.code,row.shares,new Date().toISOString(),"东方财富份额兜底"));
     if(!marketClosed&&previousSession){
       // Intraday quotes carry the previous session's close. Fill a missing
       // daily_closes row so yesterday's money estimate survives even if both
@@ -241,15 +313,17 @@ export async function collectConfirmedDaily(env:Env, timestamp:number){
           VALUES(?,?,?,?,?,?) ON CONFLICT(trade_date,code) DO UPDATE SET
             close_price=excluded.close_price,volume_lots=excluded.volume_lots,
             turnover_yi=excluded.turnover_yi,source=excluded.source`)
-          .bind(date,etf.code,q.price,q.volume_lots,q.amount_yi,"腾讯收盘行情"));
-        if(snapshotMissing.has(etf.code))stmts.push(env.DB.prepare("INSERT OR IGNORE INTO daily_snapshots(trade_date,code,payload_json,source_ts,source) VALUES(?,?,?,?,?)").bind(date,etf.code,JSON.stringify(payload),String(q.ts),"腾讯公开行情"));
+          .bind(date,etf.code,q.price,q.volume_lots,q.amount_yi,quoteSource==="腾讯公开行情"?"腾讯收盘行情":"东方财富收盘行情"));
+        if(snapshotMissing.has(etf.code))stmts.push(env.DB.prepare("INSERT OR IGNORE INTO daily_snapshots(trade_date,code,payload_json,source_ts,source) VALUES(?,?,?,?,?)").bind(date,etf.code,JSON.stringify(payload),String(q.ts),quoteSource));
         if(activityMissing.has(etf.code))stmts.push(env.DB.prepare("INSERT OR IGNORE INTO daily_activity(trade_date,code,amount_yi,volume_lots,shape_json,tail_ratio,complete) VALUES(?,?,?,?,?,?,?)").bind(date,etf.code,q.amount_yi,q.volume_lots,null,null,1));
       }
     }
     for(let i=0;i<stmts.length;i+=80)await env.DB.batch(stmts.slice(i,i+80));
     const coverage=currentCoverageCount;
+    const sourceNote=quoteSource==="腾讯公开行情"?"":`（行情源 ${quoteSource}）`;
+    const fallbackNote=fallbackRows.length?`；东方财富兜底 ${fallbackRows.length} 只`:"";
     const message=marketClosed
-      ?(full?`已采集 ${core.length} 只核心 ETF 行情与官方份额`:`已采集行情；官方份额未齐（${coverage}/${core.length}），${sourceErrors.length?"数据源暂时超时；":""}后续定时继续补采`)
+      ?(full?`已采集 ${core.length} 只核心 ETF 行情与官方份额${sourceNote}`:`已采集行情${sourceNote}；官方份额未齐（${coverage}/${core.length}）${fallbackNote}，${sourceErrors.length?"数据源暂时超时；":""}后续定时继续补采`)
       :`盘中检查完成；未写入盘中快照${retryDates.length?`，已补采 ${retryDates.length} 个历史日期`:""}`;
     await run("success",message,date);
     // Invalidate the pre-computed API payloads and their edge-cache keys.

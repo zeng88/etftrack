@@ -13,12 +13,9 @@ ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
 DB_PATH = DATA_DIR / "etf_tracker.sqlite3"
 BOOTSTRAP_PATH = DATA_DIR / "bootstrap.json"
-MAX_PARTIAL_SHARE_GAPS = 2
-
-
 def has_usable_share_coverage(expected: int, received: int) -> bool:
-    """Permit a labelled estimate when at most two funds lag disclosure."""
-    return expected > 0 and received >= max(1, expected - MAX_PARTIAL_SHARE_GAPS)
+    """Show the date as soon as any fund has disclosed; the UI labels coverage."""
+    return expected > 0 and received > 0
 
 
 def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
@@ -197,6 +194,7 @@ def load_dashboard(code: str = "510300", days: int = 30) -> dict[str, Any]:
         unconfirmed_dates: set[str] = set()
         first_seen: dict[str, str] = {}
         previous_by_code: dict[str, float] = {}
+        fallback_by_date: dict[str, set[str]] = {}
         for row in aggregate_rows:
             code, date, shares = row["code"], row["trade_date"], float(row["shares"])
             by_date.setdefault(date, {})[code] = shares
@@ -206,6 +204,14 @@ def load_dashboard(code: str = "510300", days: int = 30) -> dict[str, Any]:
             previous_by_code[code] = shares
             if row["source"] == "腾讯行情份额字段":
                 unconfirmed_dates.add(row["trade_date"])
+            if "兜底" in row["source"]:
+                fallback_by_date.setdefault(date, set()).add(code)
+        if latest:
+            for item in rows:
+                share = by_date.get(latest, {}).get(item["code"])
+                if share is not None:
+                    item["shares"] = share
+                    item["shares_yi"] = share / 1e8
         pool_history = []
         for date in sorted(by_date):
             if date in unconfirmed_dates:
@@ -222,6 +228,7 @@ def load_dashboard(code: str = "510300", days: int = 30) -> dict[str, Any]:
                 "date": date, "shares_yi": total / 1e8,
                 "delta_yi": sum(changes[code] for code in covered_codes),
                 "core_count": len(covered_codes), "basket_count": len(active_codes),
+                "fallback_count": sum(1 for code in covered_codes if code in fallback_by_date.get(date, set())),
             })
 
         # Keep the full range in the API: the two charts have independent range selectors.
@@ -229,11 +236,18 @@ def load_dashboard(code: str = "510300", days: int = 30) -> dict[str, Any]:
 
         latest_run = _latest_run(conn)
         meta = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM app_meta")}
+        official_sources = {"上交所 ETF 规模披露", "深交所 ETF 规模披露"}
+        latest_official = {row["code"] for row in aggregate_rows
+                           if row["trade_date"] == latest and row["source"] in official_sources}
+        latest_fallback = {row["code"] for row in aggregate_rows
+                           if row["trade_date"] == latest and "兜底" in row["source"]}
         return {
             "runtime": "local", "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
             "trade_date": latest, "source": meta.get("source", "腾讯行情公开接口；新浪 5 分钟 K 线"),
             "huijin_basis": meta.get("huijin_basis", "2025 年报历史披露口径，仅为历史标签"),
             "prev_share_date": meta.get("prev_share_date"), "latest_run": latest_run,
+            "latest_share_coverage": {"date": latest, "covered": len(latest_official),
+                                      "basket": len(core), "fallback": len(latest_fallback)},
             "summary": {
                 "amount_yi": amount, "avg20_yi": avg20, "ratio": ratio,
                 "flow_yi": estimated_flow, "active_net_yi": flow_signed,
@@ -271,7 +285,8 @@ def load_flow_detail(trade_date: str) -> dict[str, Any]:
             (trade_date,)).fetchone()[0] or len(rows)
         if not has_usable_share_coverage(basket_count, len(rows)) or any(row["source"] == "腾讯行情份额字段" for row in rows):
             return {
-                "date": trade_date, "core_count": len(rows), "basket_count": basket_count, "items": [],
+                "date": trade_date, "core_count": len(rows), "basket_count": basket_count,
+                "fallback_count": 0, "items": [],
                 "buy_yi": 0.0, "sell_yi": 0.0, "net_yi": 0.0,
                 "volume_yi": None, "amount_yi": None,
                 "volume_coverage": 0, "amount_coverage": 0,
@@ -324,7 +339,8 @@ def load_flow_detail(trade_date: str) -> dict[str, Any]:
                 "volume_yi": volume_yi, "amount_yi": amount_yi, "source": row["source"],
             })
         return {
-            "date": trade_date, "core_count": len(items), "basket_count": basket_count, "items": items,
+            "date": trade_date, "core_count": len(items), "basket_count": basket_count,
+            "fallback_count": sum(1 for item in items if "兜底" in item["source"]), "items": items,
             "buy_yi": total_buy_yi, "sell_yi": total_sell_yi,
             "buy_amount_yi": total_buy_amount_yi, "sell_amount_yi": total_sell_amount_yi,
             "buy_count": buy_count, "sell_count": sell_count,
@@ -349,6 +365,7 @@ def load_pool_statistics(days: int = 20) -> list[dict[str, Any]]:
         ).fetchall()
         deltas_by_date: dict[str, dict[str, float]] = {}
         unconfirmed_dates: set[str] = set()
+        fallback_by_date: dict[str, set[str]] = {}
         previous_by_code: dict[str, float] = {}
         first_seen: dict[str, str] = {}
         for row in histories:
@@ -357,6 +374,8 @@ def load_pool_statistics(days: int = 20) -> list[dict[str, Any]]:
             first_seen.setdefault(code, row["trade_date"])
             if row["source"] == "腾讯行情份额字段":
                 unconfirmed_dates.add(row["trade_date"])
+            if "兜底" in row["source"]:
+                fallback_by_date.setdefault(row["trade_date"], set()).add(code)
             if code in previous_by_code:
                 deltas_by_date.setdefault(row["trade_date"], {})[code] = (shares - previous_by_code[code]) / 1e8
             previous_by_code[code] = shares
@@ -424,6 +443,7 @@ def load_pool_statistics(days: int = 20) -> list[dict[str, Any]]:
                 "turnover_yi": turnover, "volume_yi": volume_yi,
                 "turnover_multiple": multiple, "signal": signal,
                 "coverage_count": len(covered_codes), "basket_count": len(active_codes),
+                "fallback_count": sum(1 for code in covered_codes if code in fallback_by_date.get(trade_date, set())),
             })
             if turnover_complete:
                 amount_history.append(turnover)
@@ -467,6 +487,7 @@ def load_flow_overview() -> dict[str, Any]:
         shares_at_date: dict[str, dict[str, float]] = {}
         first_seen: dict[str, str] = {}
         unconfirmed: set[str] = set()
+        fallback_by_date: dict[str, set[str]] = {}
         previous: dict[str, float] = {}
         for row in histories:
             date, code, shares = row["trade_date"], row["code"], float(row["shares"])
@@ -474,6 +495,8 @@ def load_flow_overview() -> dict[str, Any]:
             first_seen.setdefault(code, date)
             if row["source"] == "腾讯行情份额字段":
                 unconfirmed.add(date)
+            if "兜底" in row["source"]:
+                fallback_by_date.setdefault(date, set()).add(code)
             if code in previous:
                 deltas.setdefault(date, {})[code] = (shares - previous[code]) / 1e8
             previous[code] = shares
@@ -496,7 +519,8 @@ def load_flow_overview() -> dict[str, Any]:
                 continue
             amounts = {code: changes[code] * day_prices[code] for code in covered_codes}
             daily.append({"date": date, "amount_yi": sum(amounts.values()), "by_code": amounts,
-                          "core_count": len(covered_codes), "basket_count": len(active_codes)})
+                          "core_count": len(covered_codes), "basket_count": len(active_codes),
+                          "fallback_count": sum(1 for code in covered_codes if code in fallback_by_date.get(date, set()))})
 
         if not daily:
             return {"as_of_date": None, "metrics": [], "indexes": [], "etfs": [], "core_count": len(codes)}
@@ -558,11 +582,12 @@ def load_flow_overview() -> dict[str, Any]:
         etf_rows.sort(key=lambda row: row["month_yi"], reverse=True)
         recent_dates = [row["date"] for row in daily[-10:]]
         daily_matrix = [{"code": etf["code"], "name": etf["name"], "index_name": etf["index_name"],
-                         "values": [next((day["by_code"][etf["code"]] for day in daily if day["date"] == date), None)
+                         "values": [next((day["by_code"].get(etf["code"]) for day in daily if day["date"] == date), None)
                                     for date in recent_dates]} for etf in etfs]
         latest_coverage = daily[-1]
         return {"as_of_date": as_of, "year": year, "core_count": len(codes),
             "coverage_count": latest_coverage["core_count"], "basket_count": latest_coverage["basket_count"],
+            "fallback_count": latest_coverage.get("fallback_count", 0),
             "metrics": metrics,
             "recent_dates": recent_dates, "daily_matrix": daily_matrix, "indexes": indexes, "etfs": etf_rows,
             "method": "区间按日历跨度回溯，交易日数按实际交易记录动态统计，节假日不计。新上市 ETF 从首次披露份额后纳入当日合计；逐只 ETF 份额变化 × 同日收盘价，最新日缺收盘价时使用行情快照。历史每日覆盖数量随篮子中新上市 ETF 逐步纳入而变化。",

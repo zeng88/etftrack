@@ -18,10 +18,10 @@ class RealtimeRefreshTests(unittest.TestCase):
         self.assertEqual(target.strftime("%Y-%m-%d %H:%M"), "2026-11-18 13:30")
         self.assertEqual(task_name, "份额补采")
 
-    def test_one_or_two_missing_funds_are_labelled_as_usable_partial_coverage(self):
+    def test_any_disclosed_fund_is_shown_with_coverage(self):
+        self.assertTrue(has_usable_share_coverage(34, 1))
         self.assertTrue(has_usable_share_coverage(34, 33))
-        self.assertTrue(has_usable_share_coverage(34, 32))
-        self.assertFalse(has_usable_share_coverage(34, 31))
+        self.assertFalse(has_usable_share_coverage(34, 0))
 
     def test_tencent_quote_url_has_one_q_parameter(self):
         captured = []

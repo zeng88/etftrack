@@ -46,6 +46,21 @@ class SyncGuardTests(unittest.TestCase):
         self._insert("share_history", ("20261117", "159338", 2000, "z", "上交所 ETF 规模披露"))
         self.assertEqual(self.conn.execute("SELECT shares FROM share_history").fetchone()[0], 2000)
 
+    def test_fallback_share_ranks_between_exchange_and_quote(self):
+        self.conn.execute(
+            "INSERT INTO share_history VALUES('20261117','159338',999,'x','腾讯行情份额字段')")
+        self._insert("share_history", ("20261117", "159338", 1000, "y", "东方财富份额兜底"))
+        self.assertEqual(
+            self.conn.execute("SELECT source FROM share_history").fetchone()[0],
+            "东方财富份额兜底",
+        )
+        self._insert("share_history", ("20261117", "159338", 2000, "z", "上交所 ETF 规模披露"))
+        self._insert("share_history", ("20261117", "159338", 3000, "w", "东方财富份额兜底"))
+        self.assertEqual(
+            self.conn.execute("SELECT shares,source FROM share_history").fetchone(),
+            (2000, "上交所 ETF 规模披露"),
+        )
+
     def test_intraday_snapshot_cannot_replace_close_snapshot(self):
         self.conn.execute(
             "INSERT INTO daily_snapshots VALUES('20261117','159338','{\"a\":1}','x',"

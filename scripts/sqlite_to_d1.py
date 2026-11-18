@@ -21,7 +21,7 @@ TABLES = {
 # than what the Worker has already collected, so writes are ranked by source.
 SHARE_RANK = """CASE
   WHEN {col}.source IN ('上交所 ETF 规模披露','深交所 ETF 规模披露') THEN 2
-  WHEN {col}.source LIKE '%参考%' THEN 1
+  WHEN {col}.source LIKE '%参考%' OR {col}.source LIKE '%兜底%' THEN 1
   ELSE 0 END"""
 SNAPSHOT_RANK = """CASE
   WHEN {col}.source LIKE '%盘中%' THEN 0
