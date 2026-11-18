@@ -45,7 +45,7 @@ Wrangler 的 Workerd 本地运行时要求 macOS 13.5+；本机 macOS 12 不支�
    npm run db:sync:remote -- --remote
    ```
 
-   `push-remote` 会先从当前本机 SQLite 重新生成 `data/d1-import.sql`（被 Git 忽略），避免复用过期导入文件覆盖云端新数据。需要先检查 SQL 时也可单独运行 `npm run db:export`，再把生成的文件作为参数传入同步脚本。后续云端数据合并回本机：`npm run db:sync:local`；这会导出远端 D1 并按主键合并到本机 SQLite，不删除本机记录。
+   `push-remote` 会先从当前本机 SQLite 重新生成 `data/d1-import.sql`（被 Git 忽略），默认只导出最近 7 个交易日，并按来源和完整度做单调更新：交易所正式份额不会被腾讯/参考数据覆盖，收盘快照不会被盘中快照覆盖，未完成成交不会覆盖完整成交，旧日期不会回退。完整历史可单独运行 `npm run db:export` 生成后，再把文件作为参数传入同步脚本。后续云端数据合并回本机：`npm run db:sync:local`；这会导出远端 D1 并按主键合并到本机 SQLite，不删除本机记录。
 
 4. 部署：
 

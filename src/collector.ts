@@ -74,7 +74,9 @@ export async function fetchLiveTurnoverComparison(){
 }
 
 export function shareRetryDates(tradeDate:string,currentAlreadyComplete:boolean,pendingDates:string[]){
-  const unique=[...new Set(pendingDates)].filter(Boolean).filter(date=>date!==tradeDate).sort();
+  // Retry the newest gaps first. Old bootstrap dates must never starve the
+  // previous session, which is what users actually look at.
+  const unique=[...new Set(pendingDates)].filter(Boolean).filter(date=>date!==tradeDate).sort().reverse();
   const limit=currentAlreadyComplete?2:1;
   const selected=unique.slice(0,limit);
   if(!currentAlreadyComplete)selected.push(tradeDate);
@@ -122,11 +124,16 @@ export async function fetchLiveFlow(){
 }
 
 function shanghaiDate(time:number){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(time)).replaceAll("-","");}
+function previousWeekday(date:string){
+  const value=new Date(`${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}T00:00:00Z`);
+  do{value.setUTCDate(value.getUTCDate()-1);}while(value.getUTCDay()===0||value.getUTCDay()===6);
+  return value.toISOString().slice(0,10).replaceAll("-","");
+}
 export async function collectConfirmedDaily(env:Env, timestamp:number){
   const started=new Date(timestamp).toISOString(),scheduledDate=shanghaiDate(timestamp);
-  const {results:etfs=[]}=await env.DB.prepare("SELECT code,tcode,name,group_name FROM etfs ORDER BY code").all<{code:string;tcode:string;name:string;group_name:string}>();
   const run=async(status:string,message:string,date=scheduledDate)=>env.DB.prepare("INSERT INTO collection_runs(started_at,finished_at,status,trade_date,message,source) VALUES(?,?,?,?,?,?)").bind(started,new Date().toISOString(),status,date,message,"Cloudflare Worker Cron").run();
   try{
+    const {results:etfs=[]}=await env.DB.prepare("SELECT code,tcode,name,group_name FROM etfs ORDER BY code").all<{code:string;tcode:string;name:string;group_name:string}>();
     const raw=await getText(QUOTE_URL+etfs.map(e=>e.tcode).join(","));const quotes=decodeTencent(raw);
     const core=etfs.filter(e=>e.group_name==="core");
     if(core.some(e=>!quotes.has(e.code)))throw new Error("未获取到完整的核心 ETF 行情");
@@ -148,11 +155,23 @@ export async function collectConfirmedDaily(env:Env, timestamp:number){
       HAVING (SELECT COUNT(DISTINCT h.code) FROM share_history h JOIN etfs he ON he.code=h.code
         WHERE h.trade_date=s.trade_date AND he.group_name='core'
           AND h.source IN ('上交所 ETF 规模披露','深交所 ETF 规模披露')) < COUNT(DISTINCT s.code)
-      ORDER BY s.trade_date ASC LIMIT 30`)
+      ORDER BY s.trade_date DESC LIMIT 30`)
       .bind(date).all<{trade_date:string}>();
     // Workers Free allows 50 external subrequests per invocation. One quote
     // request plus two dates × (one SSE + up to fourteen SZSE requests) = 31.
-    const retryDates=shareRetryDates(date,marketClosed?currentAlreadyComplete:true,(pending.results||[]).map(row=>row.trade_date));
+    // The 13:30 slot has no current-session official shares yet, but it must
+    // still retry the previous session even if its snapshot row is missing.
+    const previousSession=marketClosed?null:(await env.DB.prepare(
+      "SELECT MAX(trade_date) AS d FROM daily_snapshots WHERE trade_date<?",
+    ).bind(date).first<{d:string|null}>())?.d||null;
+    const pendingDates=(pending.results||[]).map(row=>row.trade_date);
+    if(!marketClosed){
+      // Cover the previous session even when its snapshot row is missing.
+      for(const day of [previousSession,previousWeekday(date)]){
+        if(day&&!pendingDates.includes(day))pendingDates.push(day);
+      }
+    }
+    const retryDates=shareRetryDates(date,marketClosed?currentAlreadyComplete:true,pendingDates);
     const newOfficialByDate=new Map<string,Map<string,{shares:number;source:string}>>();
     const coverageByDate=new Map<string,number>();
     const sourceErrors:string[]=[];
@@ -190,6 +209,17 @@ export async function collectConfirmedDaily(env:Env, timestamp:number){
     for(const [retryDate,rows] of newOfficialByDate){for(const [code,x] of rows)stmts.push(env.DB.prepare(`INSERT INTO share_history(trade_date,code,shares,observed_at,source) VALUES(?,?,?,?,?)
       ON CONFLICT(trade_date,code) DO UPDATE SET shares=excluded.shares,observed_at=excluded.observed_at,source=excluded.source`)
       .bind(retryDate,code,x.shares,new Date().toISOString(),x.source));}
+    if(!marketClosed&&previousSession){
+      // Intraday quotes carry the previous session's close. Fill a missing
+      // daily_closes row so yesterday's money estimate survives even if both
+      // post-close slots failed.
+      for(const etf of etfs){const q=quotes.get(etf.code),price=Number(q?.prev_close||0);
+        if(!q||price<=0)continue;
+        stmts.push(env.DB.prepare(`INSERT INTO daily_closes(trade_date,code,close_price,volume_lots,turnover_yi,source)
+          VALUES(?,?,?,?,?,?) ON CONFLICT(trade_date,code) DO NOTHING`)
+          .bind(previousSession,etf.code,price,null,null,"腾讯前收盘回补"));
+      }
+    }
     if(marketClosed){
       const prevRows=await env.DB.prepare(`SELECT s.code,s.shares FROM share_history s JOIN (
         SELECT code,MAX(trade_date) AS trade_date FROM share_history

@@ -7,7 +7,9 @@ import tempfile
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from storage import DB_PATH, initialize_db, connect
+from sqlite_to_d1 import conflict_clause
 
 TABLES={
     "etfs":("code,tcode,name,index_name,group_name,huijin_yi","code"),
@@ -34,8 +36,7 @@ def main():
                     try: rows=source.execute(f"SELECT {columns} FROM {table}").fetchall()
                     except sqlite3.OperationalError: continue
                     names=columns.split(",");marks=",".join("?" for _ in names)
-                    keys=key_columns.split(",");updates=",".join(f"{name}=excluded.{name}" for name in names if name not in keys)
-                    conflict=f" ON CONFLICT({key_columns}) DO UPDATE SET {updates}" if updates else " ON CONFLICT DO NOTHING"
+                    conflict=conflict_clause(table,columns,key_columns)
                     target.executemany(f"INSERT INTO {table} ({columns}) VALUES ({marks}){conflict}",rows)
                     counts[table]=len(rows)
                 target.commit()

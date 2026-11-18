@@ -41,6 +41,10 @@ function createDb(etfs) {
     };
     statement.first = async () => {
       const [date] = statement.args;
+      if (sql.includes("SELECT MAX(trade_date) AS d FROM daily_snapshots")) {
+        const days = [...new Set([...state.snapshots.values()].map(row => row.trade_date))].filter(day => day < date).sort();
+        return days.length ? { d: days.at(-1) } : null;
+      }
       if (sql.includes("SELECT s.trade_date FROM share_history")) {
         const counts = new Map();
         for (const row of state.shares.values()) if (officialSources.has(row.source) && etfs.some(etf => etf.code === row.code && etf.group_name === "core")) counts.set(row.trade_date, (counts.get(row.trade_date) || 0) + 1);
@@ -139,4 +143,26 @@ test("intraday retry does not persist the current session as a close", async t =
   assert.equal(state.snapshots.size, 0);
   assert.equal(state.activity.size, 0);
   assert.equal(state.closes.size, 0);
+});
+
+test("intraday retry heals the previous session close from prev_close", async t => {
+  const etfs = [
+    { code: "510300", tcode: "sh510300", name: "沪深300ETF", group_name: "core" },
+    { code: "159919", tcode: "sz159919", name: "沪深300ETF嘉实", group_name: "core" },
+  ];
+  const { db, state } = createDb(etfs);
+  state.snapshots.set("20261117:510300", { trade_date: "20261117", code: "510300" });
+  state.snapshots.set("20261117:159919", { trade_date: "20261117", code: "159919" });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async input => {
+    const url = String(input);
+    if (url.startsWith("https://qt.gtimg.cn/")) return new Response(quote("510300", "沪深300ETF", "sh510300", "20261118133000") + quote("159919", "沪深300ETF嘉实", "sz159919", "20261118133000"));
+    throw new Error(`unexpected URL ${url}`);
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  await collectConfirmedDaily({ DB: db }, Date.parse("2026-11-18T05:30:00Z"));
+  assert.equal(state.snapshots.size, 2);
+  assert.equal(state.closes.size, 2);
+  assert.equal(state.closes.get("20261117:510300").close_price, 3.9);
 });

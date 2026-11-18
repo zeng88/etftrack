@@ -3,12 +3,12 @@ import test from "node:test";
 import { fetchLiveFlow, missingEtfsForDate, shareRetryDates } from "../src/collector.ts";
 import { LIVE_ETFS } from "../src/etf-list.ts";
 
-test("retry schedule caps work at two dates while keeping the current incomplete date", () => {
-  assert.deepEqual(shareRetryDates("20261117", false, ["20261113", "20261114", "20261115", "20261117"]), ["20261113", "20261117"]);
+test("retry schedule keeps the current incomplete date and the newest other gap", () => {
+  assert.deepEqual(shareRetryDates("20261117", false, ["20261113", "20261114", "20261115", "20261117"]), ["20261115", "20261117"]);
 });
 
-test("a complete current day is not re-collected, but older pending dates remain eligible", () => {
-  assert.deepEqual(shareRetryDates("20261117", true, ["20261113", "20261114", "20261115", "20261116"]), ["20261113", "20261114"]);
+test("a complete current day retries the two newest pending dates", () => {
+  assert.deepEqual(shareRetryDates("20261117", true, ["20261113", "20261114", "20261115", "20261116"]), ["20261115", "20261116"]);
 });
 
 test("snapshot collection selects only missing ETF rows", () => {
