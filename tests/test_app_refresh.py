@@ -18,6 +18,13 @@ class RealtimeRefreshTests(unittest.TestCase):
         self.assertEqual(target.strftime("%Y-%m-%d %H:%M"), "2026-11-18 13:30")
         self.assertEqual(task_name, "份额补采")
 
+    def test_scheduler_includes_the_1800_close_slot(self):
+        target, task_name = _next_scheduled_run(
+            datetime(2026, 11, 18, 13, 31, tzinfo=ZoneInfo("Asia/Shanghai"))
+        )
+        self.assertEqual(target.strftime("%Y-%m-%d %H:%M"), "2026-11-18 18:00")
+        self.assertEqual(task_name, "收盘行情采集")
+
     def test_any_disclosed_fund_is_shown_with_coverage(self):
         self.assertTrue(has_usable_share_coverage(34, 1))
         self.assertTrue(has_usable_share_coverage(34, 33))
