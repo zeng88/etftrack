@@ -11,6 +11,18 @@ from storage import has_usable_share_coverage
 
 
 class RealtimeRefreshTests(unittest.TestCase):
+    def test_scheduler_includes_2130_and_next_morning_0630(self):
+        for now, expected, task in [
+            ("2026-11-19 18:01", "2026-11-19 21:30", "收盘行情采集"),
+            ("2026-11-20 00:31", "2026-11-20 06:30", "份额补采"),
+            ("2026-11-21 00:31", "2026-11-21 06:30", "份额补采"),
+        ]:
+            with self.subTest(now=now):
+                start = datetime.strptime(now, "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+                target, name = _next_scheduled_run(start)
+                self.assertEqual(target.strftime("%Y-%m-%d %H:%M"), expected)
+                self.assertEqual(name, task)
+
     def test_scheduler_retries_official_shares_multiple_times_next_day(self):
         target, task_name = _next_scheduled_run(
             datetime(2026, 11, 18, 8, 31, tzinfo=ZoneInfo("Asia/Shanghai"))

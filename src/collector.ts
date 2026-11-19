@@ -232,6 +232,9 @@ export async function collectConfirmedDaily(env:Env, timestamp:number){
     const existingByDate=new Map<string,Set<string>>();
     const coverageByDate=new Map<string,number>();
     const sourceErrors:string[]=[];
+    // Bound extra exchange calls so transient failures can be retried without
+    // exhausting the Worker's external subrequest budget.
+    let exchangeRetryBudget=8;
     for(const retryDate of retryDates){
       const retryISO=`${retryDate.slice(0,4)}-${retryDate.slice(4,6)}-${retryDate.slice(6,8)}`;
       const existing=await env.DB.prepare("SELECT code FROM share_history WHERE trade_date=? AND source IN ('上交所 ETF 规模披露','深交所 ETF 规模披露')")
@@ -251,10 +254,16 @@ export async function collectConfirmedDaily(env:Env, timestamp:number){
       for(let i=0;i<sz.length;i+=5){
         await Promise.all(sz.slice(i,i+5).map(async etf=>{
           const params=new URLSearchParams({SHOWTYPE:"JSON",CATALOGID:"scsj_fund_jjgm",TABKEY:"tab1",txtDm:etf.code,txtStart:retryISO,txtEnd:retryISO,jjlb:"ETF",tab1PAGENO:"1"});
-          try{
-            const payload=JSON.parse(await getText(`https://www.szse.cn/api/report/ShowReport/data?${params}`,"https://www.szse.cn/market/fund/volume/etf/index.html",7000));
-            for(const row of payload?.[0]?.data||[]){const d=String(row.size_date||"").replaceAll("-","");const shares=Number(String(row.current_size||0).replaceAll(",",""))*1e4;if(d===retryDate&&shares>0)official.set(etf.code,{shares,source:"深交所 ETF 规模披露"});}
-          }catch(error){sourceErrors.push(`深交所 ${etf.code} ${retryDate}: ${error instanceof Error?error.message:String(error)}`);}
+          for(let attempt=0;attempt<2;attempt++){
+            try{
+              const payload=JSON.parse(await getText(`https://www.szse.cn/api/report/ShowReport/data?${params}`,"https://www.szse.cn/market/fund/volume/etf/index.html",7000));
+              for(const row of payload?.[0]?.data||[]){const d=String(row.size_date||"").replaceAll("-","");const shares=Number(String(row.current_size||0).replaceAll(",",""))*1e4;if(d===retryDate&&shares>0)official.set(etf.code,{shares,source:"深交所 ETF 规模披露"});}
+              break;
+            }catch(error){
+              if(retryDate===date&&attempt<1&&exchangeRetryBudget>0){exchangeRetryBudget--;continue;}
+              sourceErrors.push(`深交所 ${etf.code} ${retryDate}: ${error instanceof Error?error.message:String(error)}`);break;
+            }
+          }
         }));
       }
       if(official.size)newOfficialByDate.set(retryDate,official);

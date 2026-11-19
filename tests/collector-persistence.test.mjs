@@ -103,7 +103,7 @@ test("retry fills missing official ETF shares without rewriting the saved close 
     if (url.startsWith("https://query.sse.com.cn/")) return new Response(JSON.stringify({ result: [{ SEC_CODE: "510300", TOT_VOL: "100" }] }));
     if (url.startsWith("https://www.szse.cn/")) {
       szCalls++;
-      if (szCalls === 1) return new Response("temporary error", { status: 503 });
+      if (szCalls <= 2) return new Response("temporary error", { status: 503 });
       return new Response(JSON.stringify([{ data: [{ size_date: "2026-11-16", current_size: "200" }] }]));
     }
     throw new Error(`unexpected URL ${url}`);
@@ -125,6 +125,28 @@ test("retry fills missing official ETF shares without rewriting the saved close 
   assert.equal(state.snapshots.size, 2);
   assert.equal(state.activity.size, 2);
   assert.equal(state.shareWrites, 2);
+  assert.equal(state.shares.get("20261116:159919").source, "深交所 ETF 规模披露");
+});
+
+test("retries a transient SZSE failure during the same scheduled run", async t => {
+  const etfs = [{ code: "159919", tcode: "sz159919", name: "沪深300ETF嘉实", group_name: "core" }];
+  const { db, state } = createDb(etfs);
+  state.shares.set("20261113:159919", { trade_date: "20261113", code: "159919", shares: 1, source: "深交所 ETF 规模披露" });
+  let calls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async input => {
+    const url = String(input);
+    if (url.startsWith("https://qt.gtimg.cn/")) return new Response(quote("159919", "沪深300ETF嘉实", "sz159919", "20261116150000"));
+    if (url.startsWith("https://www.szse.cn/")) {
+      if (++calls === 1) return new Response("temporary error", { status: 503 });
+      return new Response(JSON.stringify([{ data: [{ size_date: "2026-11-16", current_size: "200" }] }]));
+    }
+    throw new Error(`unexpected URL ${url}`);
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const result = await collectConfirmedDaily({ DB: db }, Date.parse("2026-11-16T22:30:00Z"));
+  assert.equal(result.confirmed_shares, true);
+  assert.equal(calls, 2);
   assert.equal(state.shares.get("20261116:159919").source, "深交所 ETF 规模披露");
 });
 

@@ -137,12 +137,12 @@ def _next_scheduled_run(now: datetime) -> tuple[datetime, str]:
         day = (now + timedelta(days=offset)).date()
         weekday = day.weekday()
         if weekday <= 5:  # Monday-Saturday: retry the prior session's official shares.
-            for hour, minute in ((0, 30), (8, 30), (13, 30)):
+            for hour, minute in ((0, 30), (6, 30), (8, 30), (13, 30)):
                 retry = datetime.combine(day, datetime.min.time(), TZ).replace(hour=hour, minute=minute)
                 if retry > now:
                     candidates.append((retry, "份额补采"))
         if weekday <= 4:  # Monday-Friday: capture the current session after close.
-            for hour, minute in ((18, 0), (22, 30), (23, 15)):
+            for hour, minute in ((18, 0), (21, 30), (22, 30), (23, 15)):
                 close = datetime.combine(day, datetime.min.time(), TZ).replace(hour=hour, minute=minute)
                 if close > now:
                     candidates.append((close, "收盘行情采集"))
@@ -176,7 +176,7 @@ def main() -> None:
     threading.Thread(target=_scheduler, name="etf-close-scheduler", daemon=True).start()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"汪汪队ETF跟踪器：http://{HOST}:{PORT}")
-    print("本地服务运行期间会在交易日 18:00、22:30、23:15 采集，并于次日 00:30、08:30、13:30 补采交易所份额；按 Ctrl+C 停止。")
+    print("本地服务运行期间会在交易日 18:00、21:30、22:30、23:15 采集，并于次日 00:30、06:30、08:30、13:30 补采交易所份额；按 Ctrl+C 停止。")
     try:
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
