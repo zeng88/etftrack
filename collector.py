@@ -22,7 +22,7 @@ from storage import DB_PATH, connect
 TZ = ZoneInfo("Asia/Shanghai")
 QUOTE_URL = "https://qt.gtimg.cn/q="
 SINA_KLINE_URL = "https://quotes.sina.cn/cn/api/jsonp.php/=/CN_MarketDataService.getKLineData"
-LIVE_TURNOVER_CODES = ("510300", "159915", "588000", "510330", "159919", "510050", "510500", "512100", "510310")
+LIVE_TURNOVER_CODES = ("510300", "159915", "588000", "588080", "510330", "159919", "510050", "510500", "512100", "510310")
 SOURCE = "腾讯公开行情 + 新浪 5 分钟 K 线"
 RUN_LOCK = threading.Lock()
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128 Safari/537.36"
@@ -228,7 +228,7 @@ def fetch_live_turnover_comparison(path: str | None = None) -> dict[str, Any]:
         "comparison_count": len(items), "items": items,
         "aggregate": {"today": _aggregate_turnover(items, "today"), "previous": _aggregate_turnover(items, "previous")},
         "time": newest, "source": "新浪公开五分钟 K 线 + 腾讯公开行情",
-        "note": "默认合计为 9 只热门宽基 ETF；当日曲线末点以腾讯实时累计成交额补齐。",
+        "note": f"默认合计为 {len(items)} 只热门宽基 ETF；当日曲线末点以腾讯实时累计成交额补齐。",
     }
 
 

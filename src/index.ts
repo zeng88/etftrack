@@ -25,7 +25,7 @@ async function cachedLiveFlow(request:Request){
   await cache.put(key,response.clone());return response;
 }
 async function cachedLiveTurnover(request:Request){
-  const url=new URL(request.url),key=new Request(`${url.origin}/__live_turnover_cache/v1`),cache=caches.default;
+  const url=new URL(request.url),key=new Request(`${url.origin}/__live_turnover_cache/v2`),cache=caches.default;
   const hit=await cache.match(key);if(hit)return hit;
   const response=Response.json(await fetchLiveTurnoverComparison(),{headers:{"Cache-Control":"public, max-age=20"}});
   await cache.put(key,response.clone());return response;

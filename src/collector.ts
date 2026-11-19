@@ -9,7 +9,7 @@ const USER_AGENT = "Mozilla/5.0 (compatible; etftrack/1.0)";
 
 // This smaller basket is deliberately about market-wide broad-index turnover,
 // not the complete 34-ETF observation pool used by the daily share collector.
-export const LIVE_TURNOVER_CODES=["510300","159915","588000","510330","159919","510050","510500","512100","510310"];
+export const LIVE_TURNOVER_CODES=["510300","159915","588000","588080","510330","159919","510050","510500","512100","510310"];
 export type TurnoverPoint={time:string;amount_yi:number};
 type RawKlineBar={day?:string;amount?:string|number};
 type TurnoverEtf={code:string;tcode:string;name:string};
@@ -72,7 +72,7 @@ export async function fetchLiveTurnoverComparison(){
   ]);
   const result=buildLiveTurnoverComparison(etfs, new Map(entries), decodeTencent(raw));
   const newest=result.items.flatMap(item=>item.today).map(point=>point.time).sort().at(-1)||"—";
-  return {...result,time:newest,source:"新浪公开五分钟 K 线 + 腾讯公开行情",note:"默认合计为 9 只热门宽基 ETF；当日曲线末点以腾讯实时累计成交额补齐。"};
+  return {...result,time:newest,source:"新浪公开五分钟 K 线 + 腾讯公开行情",note:`默认合计为 ${result.comparison_count} 只热门宽基 ETF；当日曲线末点以腾讯实时累计成交额补齐。`};
 }
 
 export function shareRetryDates(tradeDate:string,currentAlreadyComplete:boolean,pendingDates:string[]){
