@@ -40,6 +40,31 @@ export async function loadDashboard(db: D1Database) {
     }
     return item;
   });
+  // Worker snapshots contain quotes only. Reconstruct chart history and the
+  // prior-session baseline from persisted daily activity for every snapshot.
+  if (latest) {
+    const activity = await db.prepare(`WITH ranked AS (
+      SELECT code,trade_date,amount_yi,volume_lots,
+        ROW_NUMBER() OVER (PARTITION BY code ORDER BY trade_date DESC) AS history_rank,
+        CASE WHEN trade_date < ? AND amount_yi IS NOT NULL THEN
+          SUM(CASE WHEN trade_date < ? AND amount_yi IS NOT NULL THEN 1 ELSE 0 END)
+          OVER (PARTITION BY code ORDER BY trade_date DESC) END AS average_rank
+      FROM daily_activity WHERE trade_date <= ?
+    ) SELECT * FROM ranked WHERE history_rank <= 30 OR average_rank <= 20`)
+      .bind(latest,latest,latest).all<{code:string;trade_date:string;amount_yi:number|null;volume_lots:number|null;history_rank:number;average_rank:number|null}>();
+    const byCode = new Map<string,typeof activity.results>();
+    for (const row of activity.results ?? []) {
+      if (!byCode.has(row.code)) byCode.set(row.code,[]);
+      byCode.get(row.code)!.push(row);
+    }
+    for (const item of etfs) {
+      const history=byCode.get(String(item.code)) ?? [];
+      item.hist=history.filter(row=>row.history_rank<=30).sort((a,b)=>a.trade_date.localeCompare(b.trade_date))
+        .map(row=>({date:row.trade_date,amount_yi:row.amount_yi,volume_lots:row.volume_lots}));
+      const baseline=history.filter(row=>row.average_rank!=null && row.average_rank<=20 && row.amount_yi!=null);
+      item.avg20_yi=baseline.length ? baseline.reduce((sum,row)=>sum+Number(row.amount_yi),0)/baseline.length : 0;
+    }
+  }
   const core = etfs.filter(item => item.group === "core");
   const sum = (key: string) => core.reduce((total, item) => total + Number(item[key] || 0), 0);
   const amount_yi = sum("amount_yi"), avg20_yi = sum("avg20_yi"), flow_yi = sum("subscr_net_yi");

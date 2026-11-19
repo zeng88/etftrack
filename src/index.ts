@@ -12,7 +12,7 @@ async function cachedRead(
   // Put the revision in the edge key so those writes invalidate cached copies,
   // and keep the expensive aggregation in api_cache so a miss costs one D1 row.
   const revision=await getDataRevision(env.DB);
-  const url=new URL(request.url),key=new Request(`${url.origin}/__data_cache/v2/${revision}${url.pathname}${url.search}`);
+  const url=new URL(request.url),key=new Request(`${url.origin}/__data_cache/v3/${revision}${url.pathname}${url.search}`);
   const cache=caches.default,hit=await cache.match(key);if(hit)return hit;
   const result=await make(revision);
   const response=Response.json(result.data,{status:result.status??200,headers:{"Cache-Control":"public, max-age=3600"}});
@@ -37,7 +37,7 @@ export default {
     try {
       if(url.pathname==="/api/health")return json({ok:true,time:new Date().toISOString()});
       if(url.pathname==="/api/dashboard"&&request.method==="GET")return cachedRead(request,env,async revision=>({
-        data:await cachedPayload(env,"dashboard",revision,()=>loadDashboard(env.DB)),
+        data:await cachedPayload(env,"dashboard:v2",revision,()=>loadDashboard(env.DB)),
       }));
       if(url.pathname==="/api/pool-stats"&&request.method==="GET"){
         const raw=Number(url.searchParams.get("days")||20),days=Math.min(Math.max(Number.isFinite(raw)?Math.trunc(raw):20,1),240);

@@ -154,7 +154,9 @@
         const index=hist.findIndex(point=>String(point.date||"").replaceAll("-","")===quoteDate),point={date:quoteDate,amount_yi:Number(quote.amount_yi)};
         if(index>=0)hist[index]=point;else hist.push(point);hist.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
       }
-      return {...item,...quote,name:item.name,index:item.index,group:item.group,huijin_yi:item.huijin_yi,
+      const baseline=hist.filter(point=>String(point.date||"").replaceAll("-","")<quoteDate&&point.amount_yi!=null&&Number.isFinite(Number(point.amount_yi))).slice(-20);
+      const avg20_yi=baseline.length?baseline.reduce((sum,point)=>sum+Number(point.amount_yi),0)/baseline.length:item.avg20_yi;
+      return {...item,...quote,avg20_yi,name:item.name,index:item.index,group:item.group,huijin_yi:item.huijin_yi,
         source_ts:quote.ts||data.time,source_name:"腾讯实时行情",hist};
     });
     if(data.date)dashboard.trade_date=data.date;
