@@ -170,6 +170,20 @@
         <p id="turnover-note" class="live-turnover-note">曲线为日内累计成交额，不代表资金净流入，也不能确认具体交易账户。</p>
       </section>
 
+      <section class="panel gold-panel" aria-labelledby="gold-title">
+        <div class="panel-heading gold-heading">
+          <div><h3 id="gold-title">黄金价格走势</h3><p>国际黄金现货参考价 · 人民币与美元</p></div>
+          <div class="gold-controls" aria-label="黄金图表选项">
+            <div class="gold-toggle" role="group" aria-label="计价单位"><button type="button" data-gold-unit="cny" aria-pressed="true">人民币 / 克</button><button type="button" data-gold-unit="usd" aria-pressed="false">美元 / 盎司</button></div>
+            <div class="gold-toggle" role="group" aria-label="时间范围"><button type="button" data-gold-range="intraday" aria-pressed="true">实时曲线</button><button type="button" data-gold-range="day" aria-pressed="false">日K线</button><button type="button" data-gold-range="week" aria-pressed="false">周K线</button><button type="button" data-gold-range="month" aria-pressed="false">月K线</button><button type="button" data-gold-range="year" aria-pressed="false">年K线</button></div>
+          </div>
+        </div>
+        <div class="gold-summary"><div><span id="gold-price-label">国际金价 · 人民币折算</span><strong id="gold-price">—</strong><small id="gold-price-unit">元 / 克</small></div><div class="gold-meta"><span id="gold-freshness">正在读取黄金行情</span><span id="gold-fx">汇率：—</span></div></div>
+        <div id="gold-chart" class="gold-chart" aria-label="黄金价格趋势图"><div class="chart-empty">正在读取黄金走势…</div></div>
+        <div id="gold-detail" class="gold-detail" aria-live="polite">移动鼠标或点击图表查看对应时间的价格</div>
+        <p id="gold-note" class="gold-note">数据来源：<a href="https://xaus.com/api/" target="_blank" rel="noopener noreferrer">XAUS</a> 国际黄金参考价；K线为数据源历史行情，本周、本月、本年尚未结束。人民币按当前汇率折算，不含历史汇率变化，与银行账户黄金报价不同。</p>
+      </section>
+
       <section class="panel table-panel">
         <div class="panel-heading table-heading">
           <div><h3>重点 ETF 行情与份额变化</h3><p id="watchlist-update-time">价格、涨跌与成交额每 20 秒刷新；份额以交易所披露为准</p></div>
@@ -209,5 +223,6 @@
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/app.js" defer></script>
+  <script src="/gold.js" defer></script>
 </body>
 </html>
