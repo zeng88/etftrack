@@ -10,7 +10,7 @@ const response=data=>({ok:true,json:async()=>data});
 function setup(){
   const requests=[],events=[],elements=new Map();
   const context=vm.createContext({AbortSignal,console:{warn(){}},fetch(url){const d=deferred();requests.push({url,...d});return d.promise;},events,$:id=>{if(!elements.has(id))elements.set(id,{textContent:"",innerHTML:""});return elements.get(id);},renderStatus(){events.push("dashboard");},renderSummary(){},renderPoolCharts(){},renderTable(){},renderLiveFlow(){},renderPoolStats(){events.push("stats");},renderFlowOverview(){events.push("overview");},applyLiveQuotes(){}});
-  vm.runInContext(`let dashboard=null,flowOverview=null,poolStats=[],statsDays=20,liveFlow=null,dashboardRequest=0,statsRequest=0,overviewRequest=0,hasPoolStats=false;${loader}`,context);
+  vm.runInContext(`let dashboard=null,flowOverview=null,poolStats=[],statsDays=20,liveFlow=null,dashboardRequest=0,statsRequest=0,overviewRequest=0,hasPoolStats=false,poolStatsStale=false;${loader}`,context);
   return {context,requests,events,elements};
 }
 const settle=()=>new Promise(resolve=>setImmediate(resolve));

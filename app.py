@@ -13,7 +13,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
-from collector import fetch_live_flow, fetch_live_turnover_comparison, update_once
+from collector import fetch_live_flow, fetch_live_turnover_comparison, fetch_shanghai_index, update_once
 from storage import ROOT, initialize_db, load_dashboard, load_flow_detail, load_pool_statistics, load_flow_overview
 
 TZ = ZoneInfo("Asia/Shanghai")
@@ -85,6 +85,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/health":
             self._json({"ok": True, "time": datetime.now(TZ).isoformat(timespec="seconds")})
+            return
+        if parsed.path == "/api/shanghai-index":
+            try:
+                self._json(fetch_shanghai_index())
+            except Exception as exc:
+                self._json({"error": f"上证指数行情暂不可用：{type(exc).__name__}"}, 502)
             return
         if parsed.path == "/api/live-flow":
             try:

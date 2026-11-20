@@ -25,6 +25,8 @@ SINA_KLINE_URL = "https://quotes.sina.cn/cn/api/jsonp.php/=/CN_MarketDataService
 LIVE_TURNOVER_CODES = ("510300", "159915", "588000", "588080", "510330", "159919", "510050", "510500", "512100", "510310")
 SOURCE = "腾讯公开行情 + 新浪 5 分钟 K 线"
 RUN_LOCK = threading.Lock()
+INDEX_LOCK = threading.Lock()
+_INDEX_CACHE: tuple[float, dict[str, Any]] | None = None
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128 Safari/537.36"
 
 
@@ -54,6 +56,39 @@ def _number(fields: list[str], index: int) -> float:
         return value if math.isfinite(value) else 0.0
     except (IndexError, ValueError):
         return 0.0
+
+
+def fetch_shanghai_index() -> dict[str, Any]:
+    """Return dated Shanghai Composite daily open and latest/close values."""
+    global _INDEX_CACHE
+    with INDEX_LOCK:
+        if _INDEX_CACHE and time.monotonic() - _INDEX_CACHE[0] < 300:
+            return _INDEX_CACHE[1]
+        sources = (
+            ("腾讯财经", "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000001,day,,,320,qfq"),
+            ("新浪财经", "https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData?symbol=sh000001&scale=240&datalen=320"),
+        )
+        for source, url in sources:
+            try:
+                payload = json.loads(_https_get(url, "https://finance.sina.com.cn/"))
+                raw = payload["data"]["sh000001"]["day"] if source == "腾讯财经" else payload
+                rows = []
+                for row in raw:
+                    try:
+                        date = str(row[0] if source == "腾讯财经" else row["day"]).replace("-", "")
+                        opening = float(row[1] if source == "腾讯财经" else row["open"])
+                        closing = float(row[2] if source == "腾讯财经" else row["close"])
+                        if re.fullmatch(r"\d{8}", date) and math.isfinite(opening) and opening > 0 and math.isfinite(closing) and closing > 0:
+                            rows.append({"date": date, "open": opening, "close": closing})
+                    except (TypeError, ValueError, IndexError, KeyError):
+                        continue
+                if rows:
+                    result = {"source": source, "rows": rows}
+                    _INDEX_CACHE = (time.monotonic(), result)
+                    return result
+            except (ValueError, TypeError, KeyError, subprocess.SubprocessError, OSError):
+                continue
+        raise RuntimeError("上证指数行情暂不可用")
 
 
 def fetch_quotes(etfs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:

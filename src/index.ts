@@ -1,6 +1,7 @@
 import { loadDashboard, loadFlowDetail, loadPoolStatistics, loadFlowOverview, getDataRevision, type Env } from "./db.ts";
 import { cachedPayload } from "./api-cache.ts";
 import { collectConfirmedDaily, fetchLiveFlow, fetchLiveTurnoverComparison } from "./collector.ts";
+import { fetchShanghaiIndex } from "./shanghai-index.ts";
 
 function json(data:unknown,status=200){return Response.json(data,{status,headers:{"Cache-Control":"no-store"}});}
 async function cachedRead(
@@ -28,6 +29,12 @@ async function cachedLiveTurnover(request:Request){
   const url=new URL(request.url),key=new Request(`${url.origin}/__live_turnover_cache/v2`),cache=caches.default;
   const hit=await cache.match(key);if(hit)return hit;
   const response=Response.json(await fetchLiveTurnoverComparison(),{headers:{"Cache-Control":"public, max-age=20"}});
+  await cache.put(key,response.clone());return response;
+}
+async function cachedShanghaiIndex(request:Request){
+  const key=new Request(`${new URL(request.url).origin}/__shanghai_index_cache/v1`),cache=caches.default;
+  const hit=await cache.match(key);if(hit)return hit;
+  const response=Response.json(await fetchShanghaiIndex(),{headers:{"Cache-Control":"public, max-age=300"}});
   await cache.put(key,response.clone());return response;
 }
 
@@ -60,6 +67,7 @@ export default {
       }
       if(url.pathname==="/api/live-flow"&&request.method==="GET")return cachedLiveFlow(request);
       if(url.pathname==="/api/live-turnover"&&request.method==="GET")return cachedLiveTurnover(request);
+      if(url.pathname==="/api/shanghai-index"&&request.method==="GET")return await cachedShanghaiIndex(request);
       if(url.pathname==="/api/update"&&request.method==="POST"){
         const cached=await cachedLiveFlow(request),flow=await cached.json();return json({status:"success",message:`实时估算已更新 · ${flow.time}`,live_flow:flow});
       }

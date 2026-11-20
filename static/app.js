@@ -5,6 +5,7 @@
   let poolRanges = {flow: 60, index: 240};
   let statsDays = 20;
   let poolStats = [];
+  let shanghaiIndex = new Map(), indexSource = "", indexLoading = true;
   let liveFlow = null;
   let liveTurnover = null;
   let turnoverSelection = "aggregate";
@@ -14,7 +15,7 @@
   let dashboardRefreshBusy = false;
   let liveTurnoverRefreshBusy = false;
   let dashboardRequest = 0, statsRequest = 0, overviewRequest = 0;
-  let hasPoolStats = false;
+  let hasPoolStats = false, poolStatsStale = false;
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const number = (v,d=1) => Number.isFinite(Number(v)) ? Number(v).toLocaleString("zh-CN",{minimumFractionDigits:d,maximumFractionDigits:d}) : "—";
   const signed = (v,d=1) => `${Number(v)>0?"+":Number(v)<0?"−":""}${number(Math.abs(Number(v)||0),d)}`;
@@ -30,8 +31,15 @@
   async function readData(url){const response=await fetch(url,{cache:"no-store",signal:AbortSignal.timeout(15000)});if(!response.ok)throw new Error(`数据读取失败（${response.status}）`);return response.json();}
   async function loadPoolStats(){
     const id=++statsRequest,days=statsDays;
-    try{const data=await readData(`/api/pool-stats?days=${days}`);if(id!==statsRequest)return;poolStats=data.rows||[];hasPoolStats=true;renderPoolStats();}
-    catch(error){if(id!==statsRequest)return;if(hasPoolStats)$("pool-stats-count").textContent="更新失败，保留上次数据";else{$("pool-stats-rows").innerHTML='<tr><td colspan="8" class="empty-row">份额统计暂时无法加载，请稍后重试</td></tr>';$('pool-stats-count').textContent="统计数据暂不可用";}console.warn("份额统计读取失败",error);}
+    try{const data=await readData(`/api/pool-stats?days=${days}`);if(id!==statsRequest)return;poolStats=data.rows||[];hasPoolStats=true;poolStatsStale=false;renderPoolStats();}
+    catch(error){if(id!==statsRequest)return;if(hasPoolStats){poolStatsStale=true;$("pool-stats-count").textContent="更新失败，保留上次数据";}else{$("pool-stats-rows").innerHTML='<tr><td colspan="9" class="empty-row">份额统计暂时无法加载，请稍后重试</td></tr>';$('pool-stats-count').textContent="统计数据暂不可用";}console.warn("份额统计读取失败",error);}
+  }
+  let indexRefreshBusy=false;
+  async function loadShanghaiIndex(){
+    if(indexRefreshBusy)return;indexRefreshBusy=true;
+    try{const data=await readData("/api/shanghai-index");if(!Array.isArray(data.rows)||!data.rows.length)throw new Error("上证指数数据为空");shanghaiIndex=new Map(data.rows.map(row=>[String(row.date),row]));indexSource=data.source||"公开行情";$("pool-index-note").textContent=`上证指数：${indexSource}；当日为最新点位，缺失显示 —`;}
+    catch(error){$("pool-index-note").textContent=shanghaiIndex.size?`上证指数更新失败，保留上次行情（${indexSource}）；当日为最新点位`:"上证指数暂不可用；份额统计不受影响";console.warn("上证指数读取失败",error);}
+    finally{indexLoading=false;indexRefreshBusy=false;if(hasPoolStats)renderPoolStats();}
   }
   async function loadFlowOverview(){
     const id=++overviewRequest;
@@ -268,8 +276,8 @@
   }
   function renderPoolCharts(){if(!dashboard)return;renderFlowChart();renderIndexChart();}
   function renderPoolStats(){
-    if(!poolStats.length){$("pool-stats-rows").innerHTML='<tr><td colspan="8" class="empty-row">所选区间暂无完整的汪汪队份额记录</td></tr>';$("pool-stats-count").textContent="0 个交易日";return;}
-    const rows=[...poolStats].reverse();
+    if(!poolStats.length){$("pool-stats-rows").innerHTML='<tr><td colspan="9" class="empty-row">所选区间暂无完整的汪汪队份额记录</td></tr>';$("pool-stats-count").textContent=poolStatsStale?"更新失败，保留上次数据":"0 个交易日";return;}
+    const rows=[...poolStats].reverse(),today=shanghaiNow().slice(0,10).replaceAll("-","");
     $("pool-stats-rows").innerHTML=rows.map(row=>{
       const delta=Number(row.shares_change_yi)||0,changeClass=delta>0?"flow-up":delta<0?"flow-down":"flow-flat";
       const buyText=row.buy_amount_yi==null?"—":`${number(row.buy_amount_yi,2)} 亿`;
@@ -280,9 +288,11 @@
       const coverage=Number(row.coverage_count)||0,basket=Number(row.basket_count)||coverage,fallback=Number(row.fallback_count)||0;
       const signal=`${delta>0?"估算净申购":delta<0?"估算净赎回":"份额持平"}${coverage<basket?` · ${coverage}/${basket} 只`:""}${fallback>0?` · 含${fallback}只兜底`:""}`;
       const turnover=row.turnover_multiple==null?"—":`${number(row.turnover_multiple,1)}×`;
-      return `<tr class="stats-row ${changeClass}" data-date="${esc(row.date)}" tabindex="0" role="button" title="点击查看 ${shortDate(row.date)} 的 ETF 明细"><td class="stats-date">${esc(shortDate(row.date))}</td><td>${esc(row.pool_name)}</td><td class="right stats-tinted">${signed(delta,2)} 亿份</td><td class="right stats-buy ${Number(row.buy_amount_yi)>0?"active":""}">${buyText}</td><td class="right stats-sell ${Number(row.sell_amount_yi)>0?"active":""}">${sellText}</td><td class="right stats-net ${netClass}" title="买入总金额估算减去赎回总金额估算">${netText}</td><td class="right">${turnover}</td><td><span class="signal-tag">${signal}</span></td></tr>`;
+      const index=shanghaiIndex.get(String(row.date).replaceAll("-","")),isToday=String(row.date).replaceAll("-","")===today;
+      const indexCell=index?`<div class="index-points"><span><small>开</small>${number(index.open,2)}</span><span><small>${isToday?"最新":"收"}</small>${number(index.close,2)}</span></div>`:indexLoading?"读取中":"—";
+      return `<tr class="stats-row ${changeClass}" data-date="${esc(row.date)}" tabindex="0" role="button" title="点击查看 ${shortDate(row.date)} 的 ETF 明细"><td class="stats-date">${esc(shortDate(row.date))}</td><td>${esc(row.pool_name)}</td><td class="right stats-tinted">${signed(delta,2)} 亿份</td><td class="right stats-buy ${Number(row.buy_amount_yi)>0?"active":""}">${buyText}</td><td class="right stats-sell ${Number(row.sell_amount_yi)>0?"active":""}">${sellText}</td><td class="right stats-net ${netClass}" title="买入总金额估算减去赎回总金额估算">${netText}</td><td class="right">${turnover}</td><td><span class="signal-tag">${signal}</span></td><td class="right money">${indexCell}</td></tr>`;
     }).join("");
-    $("pool-stats-count").textContent=`最近 ${rows.length} 个交易日 · 金额与成交量单位见列名`;
+    $("pool-stats-count").textContent=`最近 ${rows.length} 个交易日${poolStatsStale?" · 更新失败，保留上次数据":" · 金额与成交量单位见列名"}`;
   }
   function renderTable(){
     if(!dashboard)return;
@@ -317,8 +327,10 @@
   loadDashboard().catch(e=>{if(dashboard)return;if(!liveFlow){$("signal-title").textContent="数据暂时不可用";$("signal-copy").textContent=e.message;}$("etf-rows").innerHTML=`<tr><td colspan="10" class="empty-row">${esc(e.message)}</td></tr>`;toast("主要数据暂时无法加载，请稍后重试",true);});
   refreshLiveFlow();
   refreshLiveTurnover();
+  loadShanghaiIndex();
   setInterval(refreshLiveFlow,20000);
   setInterval(refreshLiveTurnover,20000);
+  setInterval(()=>{if(!document.hidden)loadShanghaiIndex();},300000);
   const refreshPersistedData=async()=>{if(document.hidden||dashboardRefreshBusy)return;dashboardRefreshBusy=true;try{await loadDashboard();}catch(error){console.warn("定时读取统计数据失败",error);}finally{dashboardRefreshBusy=false;}};
   setInterval(refreshPersistedData,60000);
   document.addEventListener("visibilitychange",()=>{if(!document.hidden){refreshPersistedData();refreshLiveFlow();}});
