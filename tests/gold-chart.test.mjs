@@ -23,10 +23,11 @@ test("gold chart renders intraday and accurate OHLC candles with currency switch
   ];
   const calls=[];
   const document={getElementById:id=>elements.get(id),querySelectorAll:selector=>selector.includes("unit")?units:ranges,addEventListener(){},hidden:false};
+  const window={innerWidth:1280,addEventListener(name,fn){this[name]=fn;}};
   const fetch=async url=>{calls.push(url);let result;if(url.includes("spot?"))result={spot_usd_oz:110,fx_rate:7,xau:{price:24.76},data_state:{status:"fresh",as_of:"2026-11-20T04:30:00Z"}};else if(url.includes("intraday"))result={points:[{t:Date.parse("2026-11-19T12:00:00Z")/1000,p:9999},{t:Date.parse("2026-11-19T16:00:00Z")/1000,p:100},{t:Date.parse("2026-11-20T02:30:00Z")/1000,p:110},{t:Date.parse("2026-11-20T10:00:00Z")/1000,p:9999}]};else result={points:url.includes("interval=1mo")?monthly:daily};return {ok:true,json:async()=>result};};
   const source=await readFile(new URL("../static/gold.js",import.meta.url),"utf8");
   class FakeDate extends Date { static now(){return Date.parse("2026-11-20T04:30:00Z");} }
-  vm.runInNewContext(source,{document,fetch,AbortSignal,Date:FakeDate,Intl,Math,Number,String,Map,Error,setInterval(){}});
+  vm.runInNewContext(source,{document,window,fetch,AbortSignal,Date:FakeDate,Intl,Math,Number,String,Map,Error,setInterval(){}});
   const settled=()=>new Promise(resolve=>setImmediate(resolve));
   await settled();
   assert.equal(elements.get("gold-price").textContent,"24.76");
@@ -55,4 +56,12 @@ test("gold chart renders intraday and accurate OHLC candles with currency switch
   assert.match(elements.get("gold-detail").innerHTML,/55\.00/);
   assert.ok(calls.some(url=>url.includes("range=10y&interval=1mo")));
   assert.equal(ranges[4].attributes["aria-pressed"],"true");
+  window.innerWidth=390;elements.get("gold-chart").clientWidth=342;window.resize();
+  assert.match(elements.get("gold-chart").innerHTML,/viewBox="0 0 342 200"/);
+  ranges[0].click();await settled();
+  assert.match(elements.get("gold-chart").innerHTML,/viewBox="0 0 342 200"/);
+  assert.match(elements.get("gold-chart").innerHTML,/00:00/);
+  assert.match(elements.get("gold-chart").innerHTML,/24:00/);
+  elements.get("gold-chart").clientWidth=300;window.resize();
+  assert.match(elements.get("gold-chart").innerHTML,/viewBox="0 0 300 200"/);
 });

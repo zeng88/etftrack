@@ -37,7 +37,8 @@
     const names=data.items?.map(item=>`${item.name}（${item.code}）`).join("、")||"—";
     $("turnover-scope").textContent=turnoverSelection==="aggregate"?`比较对象：${names}`:`当前观察：${selected.name}（${selected.code}）`;
     $("turnover-source").textContent=`数据时间 ${dateLabel(data.date)} ${latest.time} · ${data.source||"公开行情"}`;$("turnover-note").textContent=data.note||"曲线为日内累计成交额，不代表资金净流入，也不能确认具体交易账户。";
-    const values=[...selected.today,...selected.previous].map(point=>Number(point.amount_yi)||0),rawMax=Math.max(...values,1),w=860,h=270,left=54,right=18,top=18,bottom=35,iw=w-left-right,ih=h-top-bottom;
+    const mobile=window.innerWidth<=760;
+    const values=[...selected.today,...selected.previous].map(point=>Number(point.amount_yi)||0),rawMax=Math.max(...values,1),w=mobile?Math.max(240,chart.clientWidth||860):860,h=window.innerWidth<=560?220:270,left=54,right=mobile?8:18,top=18,bottom=35,iw=w-left-right,ih=h-top-bottom;
     const marketOffset=time=>{const match=String(time).match(/^(\d{2}):(\d{2})/);if(!match)return 0;const minute=Number(match[1])*60+Number(match[2]);return Math.max(0,Math.min(240,minute<780?minute-570:minute-660));};
     const niceStep=value=>{const rough=value/4,magnitude=10**Math.floor(Math.log10(Math.max(rough,.01))),fraction=rough/magnitude,nice=fraction<=1?1:fraction<=2?2:fraction<=2.5?2.5:fraction<=5?5:10;return nice*magnitude;};
     const step=niceStep(rawMax),max=Math.ceil(rawMax/step)*step,x=time=>left+marketOffset(time)/240*iw,y=value=>top+(max-value)/max*ih,makePath=points=>points.map((point,index)=>`${index?"L":"M"}${x(String(point.time)).toFixed(1)},${y(Number(point.amount_yi)||0).toFixed(1)}`).join(" ");
@@ -294,6 +295,7 @@
   $("etf-rows").addEventListener("pointerleave",()=>{turnoverTooltip.hidden=true;});
   $("etf-rows").closest(".table-scroll").addEventListener("scroll",()=>{turnoverTooltip.hidden=true;},{passive:true});
   $("turnover-etf-select").addEventListener("change",event=>{turnoverSelection=event.target.value;renderLiveTurnoverChart();});
+  window.addEventListener("resize",()=>{if(liveTurnover)renderLiveTurnoverChart();});
   loadDashboard().then(()=>refreshNow(true)).catch(e=>{$("signal-title").textContent="数据暂时不可用";$("signal-copy").textContent=e.message;$("etf-rows").innerHTML=`<tr><td colspan="10" class="empty-row">${esc(e.message)}</td></tr>`;toast(e.message,true);});
   refreshLiveFlow();
   refreshLiveTurnover();

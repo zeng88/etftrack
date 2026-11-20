@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/brand.css">
   <link rel="stylesheet" href="/readability.css">
+  <link rel="stylesheet" href="/page-nav.css">
 </head>
 <body>
   <div class="shell">
@@ -28,7 +29,7 @@
     </header>
 
     <main>
-      <section class="hero-card" aria-labelledby="hero-title">
+      <section id="market-overview" class="hero-card nav-section" aria-labelledby="hero-title">
         <div class="hero-topline">
             <div class="hero-kicker"><span id="market-state" class="state-pill">资金观察台</span><span id="freshness">正在读取数据…</span></div>
             <div class="hero-asof"><span>数据日期</span><strong id="asof-date">载入中</strong><small id="asof-time">等待行情数据</small></div>
@@ -100,7 +101,7 @@
         </article>
       </section>
 
-      <section class="charts-grid pool-charts" aria-label="汪汪队整体份额估算">
+      <section id="share-trends" class="charts-grid pool-charts nav-section" aria-label="汪汪队整体份额估算">
         <article class="panel chart-panel">
           <div class="panel-heading">
             <div><h3>汪汪队每日份额变化估算</h3><p>34 只重点 ETF 合计 · 单位：亿份 · 正数净申购，负数净赎回</p></div>
@@ -139,7 +140,7 @@
         </article>
       </section>
 
-      <section class="panel pool-stats-panel">
+      <section id="share-statistics" class="panel pool-stats-panel nav-section">
         <div class="panel-heading table-heading pool-stats-heading">
           <div><h3>汪汪队ETF合计份额变化统计</h3><p>份额变化 × 收盘价估算申赎金额；倍量对比前 20 日均额，历史缺失成交额按收盘价 × 成交量估算</p></div>
           <div class="segmented stats-range" role="group" aria-label="统计表日期范围">
@@ -155,7 +156,7 @@
         <div class="table-foot"><span id="pool-stats-count">—</span><span>点击日期行查看逐只 ETF 的份额变化、估算金额与成交数据</span></div>
       </section>
 
-      <section class="panel flow-overview-panel" aria-labelledby="flow-overview-title">
+      <section id="capital-flow" class="panel flow-overview-panel nav-section" aria-labelledby="flow-overview-title">
         <div class="panel-heading flow-overview-heading">
           <div><h3 id="flow-overview-title">国家队 ETF 资金动向估算</h3><p id="flow-overview-meta">按核心观察池份额变化与价格估算</p></div>
           <span id="flow-overview-date" class="overview-asof">等待数据</span>
@@ -180,7 +181,7 @@
         <p id="flow-overview-method" class="overview-method">金额为份额变化 × 当日价格的申赎估算。</p>
       </section>
 
-      <section class="panel live-turnover-panel" aria-labelledby="live-turnover-title">
+      <section id="etf-turnover" class="panel live-turnover-panel nav-section" aria-labelledby="live-turnover-title">
         <div class="panel-heading live-turnover-heading">
           <div><h3 id="live-turnover-title">热门宽基 ETF 实时成交走势</h3><p>今日累计成交额与上一交易日同刻对比；用于观察盘中成交是否突然放大。</p></div>
           <label class="turnover-picker"><span>观察对象</span><select id="turnover-etf-select" class="select-control" aria-label="选择观察的 ETF"><option value="aggregate">热门宽基合计（10只）</option></select></label>
@@ -192,7 +193,7 @@
         <p id="turnover-note" class="live-turnover-note">曲线为日内累计成交额，不代表资金净流入，也不能确认具体交易账户。</p>
       </section>
 
-      <section class="panel gold-panel" aria-labelledby="gold-title">
+      <section id="gold-trends" class="panel gold-panel nav-section" aria-labelledby="gold-title">
         <div class="panel-heading gold-heading">
           <div><h3 id="gold-title">黄金价格走势</h3><p>国际黄金现货参考价 · 人民币与美元</p></div>
           <div class="gold-controls" aria-label="黄金图表选项">
@@ -206,7 +207,7 @@
         <p id="gold-note" class="gold-note">数据来源：<a href="https://xaus.com/api/" target="_blank" rel="noopener noreferrer">XAUS</a> 国际黄金参考价；实时曲线涨跌幅以北京时间当天首个有效采样价为基准，并非昨收价。K线为数据源历史行情，本周、本月、本年尚未结束。人民币按当前汇率折算，不含历史汇率变化，与银行账户黄金报价不同。</p>
       </section>
 
-      <section class="panel table-panel">
+      <section id="etf-watchlist" class="panel table-panel nav-section">
         <div class="panel-heading table-heading">
           <div><h3>重点 ETF 行情与份额变化</h3><p id="watchlist-update-time">价格、涨跌与成交额每 20 秒刷新；份额以交易所披露为准</p></div>
           <div class="table-tools">
@@ -226,7 +227,7 @@
         <div class="table-foot"><span id="table-count">—</span><span>¹ 按成交内外盘估算主动买卖方向，不能确认交易账户；成交额变化对比最近两个有数据日期</span></div>
       </section>
 
-      <section class="method-grid">
+      <section id="data-method" class="method-grid nav-section">
         <article class="method-card method-main">
           <div class="section-label">估算说明</div>
           <h3>信号来自公开数据，身份无法验证。</h3>
@@ -243,8 +244,25 @@
 
     <footer><span id="footer-source">公开行情来源 · 份额以交易所披露为准</span><span>仅供研究观察，不构成投资建议</span></footer>
   </div>
+  <nav class="page-nav" aria-label="页面快捷导航">
+    <div id="page-nav-panel" class="page-nav-panel" aria-hidden="true" inert>
+      <div class="page-nav-heading"><span>页面导航</span><small>快速查看</small></div>
+      <a href="#market-overview"><i aria-hidden="true"></i><span>市场概览</span></a>
+      <a href="#share-trends"><i aria-hidden="true"></i><span>份额走势</span></a>
+      <a href="#share-statistics"><i aria-hidden="true"></i><span>申赎统计</span></a>
+      <a href="#capital-flow"><i aria-hidden="true"></i><span>资金动向</span></a>
+      <a href="#etf-turnover"><i aria-hidden="true"></i><span>ETF 成交</span></a>
+      <a href="#gold-trends"><i aria-hidden="true"></i><span>黄金走势</span></a>
+      <a href="#etf-watchlist"><i aria-hidden="true"></i><span>重点 ETF</span></a>
+      <a href="#data-method"><i aria-hidden="true"></i><span>估算说明</span></a>
+    </div>
+    <button class="page-nav-toggle" type="button" aria-controls="page-nav-panel" aria-expanded="false" aria-label="展开页面导航">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"/></svg><span>导航</span>
+    </button>
+  </nav>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/app.js" defer></script>
   <script src="/gold.js" defer></script>
+  <script src="/page-nav.js" defer></script>
 </body>
 </html>

@@ -58,7 +58,8 @@
   }
   function draw(){
     if(!quote||!points.length)return;
-    const candles=range!=="intraday",w=1000,h=230,left=68,right=candles?18:85,top=15,bottom=32;
+    const mobile=typeof window!=="undefined"&&window.innerWidth<=760;
+    const candles=range!=="intraday",w=mobile?Math.max(240,chart.clientWidth||1000):1000,h=mobile?200:230,left=mobile?64:68,right=candles?(mobile?8:18):(mobile?62:85),top=15,bottom=32;
     const lows=points.map(p=>price(candles?p.low:p.close)),highs=points.map(p=>price(candles?p.high:p.close));
     let low=Math.min(...lows),high=Math.max(...highs);const pad=Math.max((high-low)*.12,high*.0005);low-=pad;high+=pad;
     const baseline=candles?null:price(points[0].close);
@@ -67,7 +68,8 @@
     const x=(p,i)=>candles?left+(i+.5)*width/points.length:left+(p.time-start)/span*width;
     const y=value=>top+(high-value)/(high-low)*(h-top-bottom);
     const grid=Array.from({length:5},(_,i)=>{const value=high-(high-low)*i/4,at=y(value),change=candles?0:(value/baseline-1)*100;return `<line ${!candles&&i===2?'class="gold-zero" ':""}x1="${left}" y1="${at}" x2="${w-right}" y2="${at}"/><text x="${left-9}" y="${at+4}" text-anchor="end">${format(value)}</text>${candles?"":`<text class="gold-change" x="${w-right+9}" y="${at+4}" text-anchor="start">${Math.abs(change)<.000001?"0.00":`${change>0?"+":""}${format(change)}`}%</text>`}`;}).join("");
-    const ticks=(candles?[0,.5,1]:[0,.25,.5,.75,1]).map(p=>{const index=Math.round(p*(points.length-1)),label=candles?pointLabel(points[index]):`${String(p*24).padStart(2,"0")}:00`;return `<text x="${left+p*width}" y="${h-5}" text-anchor="${p===0?"start":p===1?"end":"middle"}">${label}</text>`;}).join("");
+    const tickPositions=mobile?(candles?[0,1]:[0,.5,1]):(candles?[0,.5,1]:[0,.25,.5,.75,1]);
+    const ticks=tickPositions.map(p=>{const index=Math.round(p*(points.length-1)),label=candles?pointLabel(points[index]):`${String(p*24).padStart(2,"0")}:00`;return `<text x="${left+p*width}" y="${h-5}" text-anchor="${p===0?"start":p===1?"end":"middle"}">${label}</text>`;}).join("");
     let drawing;
     if(candles){
       const barWidth=Math.max(1,Math.min(12,width/points.length*.68));
@@ -109,6 +111,7 @@
   document.querySelectorAll("[data-gold-unit]").forEach(button=>button.addEventListener("click",()=>{unit=button.dataset.goldUnit;document.querySelectorAll("[data-gold-unit]").forEach(el=>el.setAttribute("aria-pressed",String(el===button)));refresh();}));
   document.querySelectorAll("[data-gold-range]").forEach(button=>button.addEventListener("click",()=>{range=button.dataset.goldRange;document.querySelectorAll("[data-gold-range]").forEach(el=>el.setAttribute("aria-pressed",String(el===button)));chart.textContent="正在读取黄金走势…";refresh();}));
   chart.addEventListener("pointermove",showPoint);chart.addEventListener("click",showPoint);
+  if(typeof window!=="undefined")window.addEventListener("resize",draw);
   refresh();setInterval(()=>{if(!document.hidden)refresh();},60000);
   document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh();});
 })();
