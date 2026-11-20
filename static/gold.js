@@ -53,18 +53,20 @@
     return range==="year"?`${y}年`:range==="month"?`${y}-${m}`:range==="week"?`${y}-${m}-${day} 起`:`${y}-${m}-${day}`;
   }
   function describe(point){
-    if(range==="intraday"){detail.textContent=`${pointLabel(point)} · ${format(price(point.close))} ${unitLabel()}`;return;}
+    if(range==="intraday"){const change=(point.close/points[0].close-1)*100;detail.textContent=`${pointLabel(point)} · ${format(price(point.close))} ${unitLabel()} · ${change>0?"+":""}${format(change)}%`;return;}
     detail.innerHTML=`<strong>${pointLabel(point)}</strong><span>开盘 <b>${format(price(point.open))}</b></span><span>最高 <b>${format(price(point.high))}</b></span><span>最低 <b>${format(price(point.low))}</b></span><span>收盘 <b>${format(price(point.close))}</b></span><small>${unitLabel()} · 红涨绿跌</small>`;
   }
   function draw(){
     if(!quote||!points.length)return;
-    const w=1000,h=230,left=68,right=18,top=15,bottom=32,candles=range!=="intraday";
+    const candles=range!=="intraday",w=1000,h=230,left=68,right=candles?18:85,top=15,bottom=32;
     const lows=points.map(p=>price(candles?p.low:p.close)),highs=points.map(p=>price(candles?p.high:p.close));
     let low=Math.min(...lows),high=Math.max(...highs);const pad=Math.max((high-low)*.12,high*.0005);low-=pad;high+=pad;
+    const baseline=candles?null:price(points[0].close);
+    if(!candles){const extent=Math.max(high-baseline,baseline-low);low=baseline-extent;high=baseline+extent;}
     const start=candles?points[0].time:beijingDayStart(Date.now()),end=candles?points.at(-1).time:start+86400000,span=Math.max(end-start,1),width=w-left-right;
     const x=(p,i)=>candles?left+(i+.5)*width/points.length:left+(p.time-start)/span*width;
     const y=value=>top+(high-value)/(high-low)*(h-top-bottom);
-    const grid=Array.from({length:5},(_,i)=>{const value=high-(high-low)*i/4,at=y(value);return `<line x1="${left}" y1="${at}" x2="${w-right}" y2="${at}"/><text x="${left-9}" y="${at+4}" text-anchor="end">${format(value)}</text>`;}).join("");
+    const grid=Array.from({length:5},(_,i)=>{const value=high-(high-low)*i/4,at=y(value),change=candles?0:(value/baseline-1)*100;return `<line ${!candles&&i===2?'class="gold-zero" ':""}x1="${left}" y1="${at}" x2="${w-right}" y2="${at}"/><text x="${left-9}" y="${at+4}" text-anchor="end">${format(value)}</text>${candles?"":`<text class="gold-change" x="${w-right+9}" y="${at+4}" text-anchor="start">${Math.abs(change)<.000001?"0.00":`${change>0?"+":""}${format(change)}`}%</text>`}`;}).join("");
     const ticks=(candles?[0,.5,1]:[0,.25,.5,.75,1]).map(p=>{const index=Math.round(p*(points.length-1)),label=candles?pointLabel(points[index]):`${String(p*24).padStart(2,"0")}:00`;return `<text x="${left+p*width}" y="${h-5}" text-anchor="${p===0?"start":p===1?"end":"middle"}">${label}</text>`;}).join("");
     let drawing;
     if(candles){

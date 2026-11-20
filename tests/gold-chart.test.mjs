@@ -31,15 +31,21 @@ test("gold chart renders intraday and accurate OHLC candles with currency switch
   await settled();
   assert.equal(elements.get("gold-price").textContent,"24.76");
   assert.match(elements.get("gold-chart").innerHTML,/gold-line/);
+  assert.match(elements.get("gold-chart").innerHTML,/class="gold-zero"/);
+  assert.match(elements.get("gold-chart").innerHTML,/class="gold-change"[^>]*>0\.00%/);
+  assert.match(elements.get("gold-chart").innerHTML,/class="gold-change" x="924"[^>]*text-anchor="start"/);
+  assert.match(elements.get("gold-detail").textContent,/\+10\.00%/);
   for(const tick of ["00:00","06:00","12:00","18:00","24:00"])assert.match(elements.get("gold-chart").innerHTML,new RegExp(tick));
   assert.doesNotMatch(elements.get("gold-chart").innerHTML,/>\d,\d{3}/);
   elements.get("gold-chart").pointermove({clientX:900});
   assert.equal(elements.get("gold-detail").textContent,"该时刻暂无行情数据");
   units[1].click();await settled();
   assert.equal(elements.get("gold-price").textContent,"110.00");
+  assert.match(elements.get("gold-detail").textContent,/\+10\.00%/);
   for(const index of [1,2,3,4]){
     ranges[index].click();await settled();
     assert.match(elements.get("gold-chart").innerHTML,/gold-candle/);
+    assert.doesNotMatch(elements.get("gold-chart").innerHTML,/gold-zero|gold-change/);
     assert.match(elements.get("gold-detail").innerHTML,/开盘/);
     assert.match(elements.get("gold-detail").innerHTML,/最高/);
     assert.match(elements.get("gold-detail").innerHTML,/最低/);
