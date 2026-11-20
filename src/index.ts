@@ -32,7 +32,7 @@ async function cachedLiveTurnover(request:Request){
   await cache.put(key,response.clone());return response;
 }
 async function cachedShanghaiIndex(request:Request){
-  const key=new Request(`${new URL(request.url).origin}/__shanghai_index_cache/v1`),cache=caches.default;
+  const key=new Request(`${new URL(request.url).origin}/__shanghai_index_cache/v2`),cache=caches.default;
   const hit=await cache.match(key);if(hit)return hit;
   const response=Response.json(await fetchShanghaiIndex(),{headers:{"Cache-Control":"public, max-age=300"}});
   await cache.put(key,response.clone());return response;

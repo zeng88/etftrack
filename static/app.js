@@ -37,7 +37,7 @@
   let indexRefreshBusy=false;
   async function loadShanghaiIndex(){
     if(indexRefreshBusy)return;indexRefreshBusy=true;
-    try{const data=await readData("/api/shanghai-index");if(!Array.isArray(data.rows)||!data.rows.length)throw new Error("上证指数数据为空");shanghaiIndex=new Map(data.rows.map(row=>[String(row.date),row]));indexSource=data.source||"公开行情";$("pool-index-note").textContent=`上证指数：${indexSource}；涨跌按开盘点位计算，当日为最新点位`;}
+    try{const data=await readData("/api/shanghai-index");if(!Array.isArray(data.rows)||!data.rows.length)throw new Error("上证指数数据为空");shanghaiIndex=new Map(data.rows.map(row=>[String(row.date),row]));indexSource=data.source||"公开行情";$("pool-index-note").textContent=`上证指数：${indexSource}；涨跌幅相对上一交易日收盘，当日为最新点位`;}
     catch(error){$("pool-index-note").textContent=shanghaiIndex.size?`上证指数更新失败，保留上次行情（${indexSource}）；当日为最新点位`:"上证指数暂不可用；份额统计不受影响";console.warn("上证指数读取失败",error);}
     finally{indexLoading=false;indexRefreshBusy=false;if(hasPoolStats)renderPoolStats();}
   }
@@ -289,8 +289,9 @@
       const signal=`${delta>0?"估算净申购":delta<0?"估算净赎回":"份额持平"}${coverage<basket?` · ${coverage}/${basket} 只`:""}${fallback>0?` · 含${fallback}只兜底`:""}`;
       const turnover=row.turnover_multiple==null?"—":`${number(row.turnover_multiple,1)}×`;
       const index=shanghaiIndex.get(String(row.date).replaceAll("-","")),isToday=String(row.date).replaceAll("-","")===today;
-      const indexDelta=index?Number(index.close)-Number(index.open):null,indexPct=index?indexDelta/Number(index.open)*100:null;
-      const indexCell=index?`<div class="index-points"><span><small>开</small>${number(index.open,2)}</span><span><small>${isToday?"最新":"收"}</small>${number(index.close,2)}</span><span class="index-change ${tone(indexDelta)}" title="相对当日开盘点位"><small>较开盘</small>${signed(indexDelta,2)} 点 · ${signed(indexPct,2)}%</span></div>`:indexLoading?"读取中":"—";
+      const prevClose=Number(index?.prev_close),indexPct=index&&Number.isFinite(prevClose)&&prevClose>0?(Number(index.close)/prevClose-1)*100:null;
+      const point=value=>Number.isFinite(Number(value))&&Number(value)>0?number(value,2):"—";
+      const indexCell=index?`<div class="index-points"><span><small>最高</small>${point(index.high)}</span><span><small>最低</small>${point(index.low)}</span><span><small>${isToday?"最新":"收盘"}</small>${point(index.close)}</span><span class="index-change ${indexPct==null?"neutral":tone(indexPct)}" title="相对上一交易日收盘点位"><small>涨跌幅</small>${indexPct==null?"—":`${signed(indexPct,2)}%`}</span></div>`:indexLoading?"读取中":"—";
       return `<tr class="stats-row ${changeClass}" data-date="${esc(row.date)}" tabindex="0" role="button" title="点击查看 ${shortDate(row.date)} 的 ETF 明细"><td class="stats-date">${esc(shortDate(row.date))}</td><td>${esc(row.pool_name)}</td><td class="right stats-tinted">${signed(delta,2)} 亿份</td><td class="right stats-buy ${Number(row.buy_amount_yi)>0?"active":""}">${buyText}</td><td class="right stats-sell ${Number(row.sell_amount_yi)>0?"active":""}">${sellText}</td><td class="right stats-net ${netClass}" title="买入总金额估算减去赎回总金额估算">${netText}</td><td class="right">${turnover}</td><td><span class="signal-tag">${signal}</span></td><td class="right money">${indexCell}</td></tr>`;
     }).join("");
     $("pool-stats-count").textContent=`最近 ${rows.length} 个交易日${poolStatsStale?" · 更新失败，保留上次数据":" · 金额与成交量单位见列名"}`;

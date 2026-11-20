@@ -59,7 +59,7 @@ def _number(fields: list[str], index: int) -> float:
 
 
 def fetch_shanghai_index() -> dict[str, Any]:
-    """Return dated Shanghai Composite daily open and latest/close values."""
+    """Return dated Shanghai Composite high, low, close and previous close."""
     global _INDEX_CACHE
     with INDEX_LOCK:
         if _INDEX_CACHE and time.monotonic() - _INDEX_CACHE[0] < 300:
@@ -72,16 +72,34 @@ def fetch_shanghai_index() -> dict[str, Any]:
             try:
                 payload = json.loads(_https_get(url, "https://finance.sina.com.cn/"))
                 raw = payload["data"]["sh000001"]["day"] if source == "腾讯财经" else payload
-                rows = []
+                entries = []
                 for row in raw:
                     try:
                         date = str(row[0] if source == "腾讯财经" else row["day"]).replace("-", "")
-                        opening = float(row[1] if source == "腾讯财经" else row["open"])
-                        closing = float(row[2] if source == "腾讯财经" else row["close"])
-                        if re.fullmatch(r"\d{8}", date) and math.isfinite(opening) and opening > 0 and math.isfinite(closing) and closing > 0:
-                            rows.append({"date": date, "open": opening, "close": closing})
-                    except (TypeError, ValueError, IndexError, KeyError):
+                        if not re.fullmatch(r"\d{8}", date):
+                            continue
+                        def positive(value: Any) -> float | None:
+                            try:
+                                parsed = float(value)
+                                return parsed if math.isfinite(parsed) and parsed > 0 else None
+                            except (TypeError, ValueError):
+                                return None
+                        opening = positive(row[1] if source == "腾讯财经" else row.get("open"))
+                        closing = positive(row[2] if source == "腾讯财经" else row.get("close"))
+                        high = positive(row[3] if source == "腾讯财经" else row.get("high"))
+                        low = positive(row[4] if source == "腾讯财经" else row.get("low"))
+                        entries.append({"date": date, "open": opening, "close": closing, "high": high, "low": low})
+                    except (TypeError, IndexError, KeyError, AttributeError):
                         continue
+                entries.sort(key=lambda item: item["date"])
+                rows = []
+                for i, entry in enumerate(entries):
+                    if entry["close"] is None:
+                        continue
+                    high, low, closing = entry["high"], entry["low"], entry["close"]
+                    valid_range = high is not None and low is not None and high >= low and high >= closing and low <= closing
+                    previous = entries[i - 1]["close"] if i > 0 and entries[i - 1]["date"] < entry["date"] else None
+                    rows.append({**entry, "high": high if valid_range else None, "low": low if valid_range else None, "prev_close": previous})
                 if rows:
                     result = {"source": source, "rows": rows}
                     _INDEX_CACHE = (time.monotonic(), result)

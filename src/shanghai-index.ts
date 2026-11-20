@@ -1,14 +1,21 @@
 const TENCENT_URL="https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000001,day,,,320,qfq";
 const SINA_URL="https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData?symbol=sh000001&scale=240&datalen=320";
 
-type IndexRow = {date:string;open:number;close:number};
+type IndexRow = {date:string;open:number|null;close:number;high:number|null;low:number|null;prev_close:number|null};
 
 export function parseIndexRows(payload:unknown, source:"tencent"|"sina"):IndexRow[]{
   const data=payload as any;
   const values=source==="tencent"?data?.data?.sh000001?.day:data;
   if(!Array.isArray(values))throw new Error("上证指数行情格式异常");
-  const rows=values.map((row:any)=>({date:String(source==="tencent"?row?.[0]:row?.day||"").replaceAll("-",""),open:Number(source==="tencent"?row?.[1]:row?.open),close:Number(source==="tencent"?row?.[2]:row?.close)}))
-    .filter((row:IndexRow)=>/^\d{8}$/.test(row.date)&&Number.isFinite(row.open)&&row.open>0&&Number.isFinite(row.close)&&row.close>0);
+  const positive=(value:unknown)=>{const n=Number(value);return Number.isFinite(n)&&n>0?n:null;};
+  const entries=values.map((row:any)=>({date:String(source==="tencent"?row?.[0]:row?.day||"").replaceAll("-",""),open:positive(source==="tencent"?row?.[1]:row?.open),close:positive(source==="tencent"?row?.[2]:row?.close),high:positive(source==="tencent"?row?.[3]:row?.high),low:positive(source==="tencent"?row?.[4]:row?.low)}))
+    .filter((row:{date:string})=>/^\d{8}$/.test(row.date)).sort((a:{date:string},b:{date:string})=>a.date.localeCompare(b.date));
+  const rows:IndexRow[]=entries.flatMap((row:{date:string;open:number|null;close:number|null;high:number|null;low:number|null},i:number)=>{
+    if(row.close===null)return [];
+    const validRange=row.high!==null&&row.low!==null&&row.high>=row.low&&row.high>=row.close&&row.low<=row.close;
+    const previous=i>0&&entries[i-1].date<row.date?entries[i-1].close:null;
+    return [{date:row.date,open:row.open,close:row.close,high:validRange?row.high:null,low:validRange?row.low:null,prev_close:previous}];
+  });
   if(!rows.length)throw new Error("上证指数行情为空");
   return rows;
 }

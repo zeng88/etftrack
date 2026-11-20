@@ -14,10 +14,10 @@ class ShanghaiIndexTests(unittest.TestCase):
 
     def test_uses_fallback_and_caches_valid_daily_rows(self):
         bad = json.dumps({"data": {}}).encode()
-        good = json.dumps([{"day": "2026-11-19", "open": "3527.30", "close": "3533.79"}]).encode()
+        good = json.dumps([{"day": "2026-11-18", "open": "3500", "close": "3500", "high": "3520", "low": "3480"}, {"day": "2026-11-19", "open": "3527.30", "close": "3533.79", "high": "3540", "low": "3500"}]).encode()
         with patch.object(collector, "_https_get", side_effect=[bad, good]) as fetch:
             first = collector.fetch_shanghai_index()
-            self.assertEqual(first, {"source": "新浪财经", "rows": [{"date": "20261119", "open": 3527.3, "close": 3533.79}]})
+            self.assertEqual(first, {"source": "新浪财经", "rows": [{"date": "20261118", "open": 3500, "close": 3500, "high": 3520, "low": 3480, "prev_close": None}, {"date": "20261119", "open": 3527.3, "close": 3533.79, "high": 3540, "low": 3500, "prev_close": 3500}]})
             self.assertEqual(collector.fetch_shanghai_index(), first)
             self.assertEqual(fetch.call_count, 2)
 
