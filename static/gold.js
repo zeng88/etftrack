@@ -3,12 +3,15 @@
   const chart = $("gold-chart"), detail = $("gold-detail"), cache = new Map();
   const base = "https://xaus.com/api/v1/";
   const paths = {intraday:"intraday?symbol=xau&hours=24",daily:"chart?symbol=xau&range=2y&interval=1d",monthly:"chart?symbol=xau&range=10y&interval=1mo"};
-  const labels = {intraday:"最近 24 小时 · 5 分钟采样",day:"日K线 · 近一年",week:"周K线 · 近两年",month:"月K线 · 近五年",year:"年K线 · 近十年"};
+  const labels = {intraday:"北京时间当日 · 5 分钟采样",day:"日K线 · 近一年",week:"周K线 · 近两年",month:"月K线 · 近五年",year:"年K线 · 近十年"};
   let unit="cny", range="intraday", quote=null, points=[], requestId=0, lastRender=null;
   const format = (n,d=2) => Number(n).toLocaleString("zh-CN",{minimumFractionDigits:d,maximumFractionDigits:d});
   const timestamp = (value,options={}) => new Intl.DateTimeFormat("zh-CN",{timeZone:"Asia/Shanghai",hour12:false,...options}).format(new Date(value));
   const price = value => unit==="cny" ? value*Number(quote.fx_rate)/31.1034768 : value;
   const unitLabel = () => unit==="cny" ? "元 / 克" : "美元 / 金衡盎司";
+  // Shanghai does not observe daylight saving time. Anchor the chart to the
+  // actual Beijing calendar day, independent of the viewer's local timezone.
+  const beijingDayStart = time => Math.floor((time+8*3600000)/86400000)*86400000-8*3600000;
   async function get(path,ttl){
     const hit=cache.get(path);if(hit && Date.now()-hit.time<ttl)return hit.data;
     const response=await fetch(base+path,{signal:AbortSignal.timeout(12000)});
@@ -58,11 +61,11 @@
     const w=1000,h=230,left=68,right=18,top=15,bottom=32,candles=range!=="intraday";
     const lows=points.map(p=>price(candles?p.low:p.close)),highs=points.map(p=>price(candles?p.high:p.close));
     let low=Math.min(...lows),high=Math.max(...highs);const pad=Math.max((high-low)*.12,high*.0005);low-=pad;high+=pad;
-    const start=points[0].time,end=points.at(-1).time,span=Math.max(end-start,1),width=w-left-right;
+    const start=candles?points[0].time:beijingDayStart(Date.now()),end=candles?points.at(-1).time:start+86400000,span=Math.max(end-start,1),width=w-left-right;
     const x=(p,i)=>candles?left+(i+.5)*width/points.length:left+(p.time-start)/span*width;
     const y=value=>top+(high-value)/(high-low)*(h-top-bottom);
     const grid=Array.from({length:5},(_,i)=>{const value=high-(high-low)*i/4,at=y(value);return `<line x1="${left}" y1="${at}" x2="${w-right}" y2="${at}"/><text x="${left-9}" y="${at+4}" text-anchor="end">${format(value)}</text>`;}).join("");
-    const ticks=[0,.5,1].map(p=>{const index=Math.round(p*(points.length-1)),label=range==="intraday"?timestamp(points[index].time,{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}):pointLabel(points[index]);return `<text x="${left+p*width}" y="${h-5}" text-anchor="${p===0?"start":p===1?"end":"middle"}">${label}</text>`;}).join("");
+    const ticks=(candles?[0,.5,1]:[0,.25,.5,.75,1]).map(p=>{const index=Math.round(p*(points.length-1)),label=candles?pointLabel(points[index]):`${String(p*24).padStart(2,"0")}:00`;return `<text x="${left+p*width}" y="${h-5}" text-anchor="${p===0?"start":p===1?"end":"middle"}">${label}</text>`;}).join("");
     let drawing;
     if(candles){
       const barWidth=Math.max(1,Math.min(12,width/points.length*.68));
@@ -78,7 +81,7 @@
     if(!lastRender||!points.length)return;const rect=chart.getBoundingClientRect(),{w,left,right,start,end,candles}=lastRender;
     const at=Math.max(0,Math.min(1,((event.clientX-rect.left)/rect.width*w-left)/(w-left-right)));
     if(candles){describe(points[Math.min(points.length-1,Math.floor(at*points.length))]);return;}
-    const target=start+(end-start)*at;let index=0;while(index<points.length-1&&Math.abs(points[index+1].time-target)<=Math.abs(points[index].time-target))index++;describe(points[index]);
+    const target=start+(end-start)*at;if(target<points[0].time||target>points.at(-1).time){detail.textContent="该时刻暂无行情数据";return;}let index=0;while(index<points.length-1&&Math.abs(points[index+1].time-target)<=Math.abs(points[index].time-target))index++;describe(points[index]);
   }
   async function refresh(){
     const id=++requestId,selected=range;
@@ -87,9 +90,9 @@
       if(id!==requestId)return;
       if(!(Number(spot.spot_usd_oz)>0&&Number(spot.fx_rate)>0))throw new Error("黄金报价或汇率缺失");
       let parsed;
-      if(selected==="intraday")parsed=(series.points||[]).map(p=>({time:Number(p.t)*1000,close:Number(p.p)})).filter(p=>Number.isFinite(p.time)&&p.time>0&&Number.isFinite(p.close)&&p.close>0).sort((a,b)=>a.time-b.time);
+      if(selected==="intraday"){const now=Date.now(),dayStart=beijingDayStart(now);parsed=(series.points||[]).map(p=>({time:Number(p.t)*1000,close:Number(p.p)})).filter(p=>Number.isFinite(p.time)&&p.time>=dayStart&&p.time<=now&&Number.isFinite(p.close)&&p.close>0).sort((a,b)=>a.time-b.time);}
       else{const daily=normalize(series.points),months=monthly?normalize(monthly.points):[];if(daily.length<2||((selected==="month"||selected==="year")&&!months.length))throw new Error("黄金K线数据不足");parsed=candleSeries(daily,months,selected);}
-      if(parsed.length<2)throw new Error("黄金走势数据不足");
+      if(parsed.length<(selected==="intraday"?1:2))throw new Error(selected==="intraday"?"北京时间今日暂无黄金分时数据":"黄金走势数据不足");
       quote=spot;points=parsed;
       $("gold-price-label").textContent=unit==="cny"?"国际金价 · 人民币折算":"国际金价 · 伦敦金现货";
       $("gold-price").textContent=format(unit==="cny"?Number(spot.xau?.price):spot.spot_usd_oz);
