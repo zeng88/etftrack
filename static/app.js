@@ -13,6 +13,8 @@
   let toastTimer = null;
   let dashboardRefreshBusy = false;
   let liveTurnoverRefreshBusy = false;
+  let dashboardRequest = 0, statsRequest = 0, overviewRequest = 0;
+  let hasPoolStats = false;
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const number = (v,d=1) => Number.isFinite(Number(v)) ? Number(v).toLocaleString("zh-CN",{minimumFractionDigits:d,maximumFractionDigits:d}) : "—";
   const signed = (v,d=1) => `${Number(v)>0?"+":Number(v)<0?"−":""}${number(Math.abs(Number(v)||0),d)}`;
@@ -25,8 +27,23 @@
   const shanghaiNow = () => new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).format(new Date());
   const marketPhase = now => {const weekday=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Shanghai",weekday:"short"}).format(new Date()).toLowerCase();if(weekday==="sat"||weekday==="sun")return "offday";const hm=now.slice(11,16);if((hm>="09:30"&&hm<="11:30")||(hm>="13:00"&&hm<="15:00"))return "open";if(hm>"11:30"&&hm<"13:00")return "lunch";return hm>="15:00"?"closed":"preopen";};
   function toast(message,isError=false){const el=$("toast");el.textContent=message;el.className=`toast show${isError?" error":""}`;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className="toast",3800);}
-  async function loadDashboard(){const [r,s,o]=await Promise.all([fetch("/api/dashboard",{cache:"no-store"}),fetch(`/api/pool-stats?days=${statsDays}`,{cache:"no-store"}),fetch("/api/flow-overview",{cache:"no-store"})]);if(!r.ok)throw new Error(`数据读取失败（${r.status}）`);if(!s.ok||!o.ok)throw new Error("统计接口暂不可用");dashboard=await r.json();if(!dashboard.etfs?.length)throw new Error(dashboard.error||"暂无 ETF 行情数据");if(s.ok){const data=await s.json();poolStats=data.rows||[];}else poolStats=[];if(o.ok)flowOverview=await o.json();else flowOverview=null;if(liveFlow)applyLiveQuotes(liveFlow,false);render();}
-  function render(){renderStatus();renderSummary();renderFlowOverview();renderPoolCharts();renderPoolStats();renderTable();if(liveFlow)renderLiveFlow();}
+  async function readData(url){const response=await fetch(url,{cache:"no-store",signal:AbortSignal.timeout(15000)});if(!response.ok)throw new Error(`数据读取失败（${response.status}）`);return response.json();}
+  async function loadPoolStats(){
+    const id=++statsRequest,days=statsDays;
+    try{const data=await readData(`/api/pool-stats?days=${days}`);if(id!==statsRequest)return;poolStats=data.rows||[];hasPoolStats=true;renderPoolStats();}
+    catch(error){if(id!==statsRequest)return;if(hasPoolStats)$("pool-stats-count").textContent="更新失败，保留上次数据";else{$("pool-stats-rows").innerHTML='<tr><td colspan="8" class="empty-row">份额统计暂时无法加载，请稍后重试</td></tr>';$('pool-stats-count').textContent="统计数据暂不可用";}console.warn("份额统计读取失败",error);}
+  }
+  async function loadFlowOverview(){
+    const id=++overviewRequest;
+    try{const data=await readData("/api/flow-overview");if(id!==overviewRequest)return;flowOverview=data;renderFlowOverview();}
+    catch(error){if(id!==overviewRequest)return;if(flowOverview)$("flow-overview-meta").textContent="更新失败，保留上次数据";else{$("flow-overview-date").textContent="数据暂不可用";$("flow-overview-meta").textContent="资金动向数据暂时无法加载，请稍后重试";$("flow-metric-cards").innerHTML='<div class="flow-metric-card flow-metric-loading">资金动向数据暂不可用</div>';for(const id of ["flow-index-rows","flow-etf-rows","flow-daily-rows"])$(id).innerHTML='<tr><td colspan="12" class="empty-row">数据暂时无法加载，请稍后重试</td></tr>';}console.warn("资金动向读取失败",error);}
+  }
+  async function loadDashboard(){
+    const id=++dashboardRequest;void loadPoolStats();void loadFlowOverview();
+    const data=await readData("/api/dashboard");if(id!==dashboardRequest)return;if(!data.etfs?.length)throw new Error(data.error||"暂无 ETF 行情数据");
+    dashboard=data;if(liveFlow)applyLiveQuotes(liveFlow,false);render();
+  }
+  function render(){renderStatus();renderSummary();renderPoolCharts();renderTable();if(liveFlow)renderLiveFlow();}
   function turnoverAt(points,time){const rows=(points||[]).filter(point=>String(point.time)<=time);return rows.length?Number(rows.at(-1).amount_yi)||0:0;}
   function renderLiveTurnoverChart(){
     const chart=$("live-turnover-chart"),data=liveTurnover;if(!data){chart.innerHTML='<div class="chart-empty">实时成交走势暂不可用，等待下一轮公开行情刷新</div>';return;}
@@ -249,7 +266,7 @@
     const ticks=svgAxis(w,h,left,right,top,bottom,[hi,(hi+lo)/2,lo],v=>number(v,0));const y100=y(100);
     $("index-chart").innerHTML=`<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><line class="baseline-line" x1="${left}" y1="${y100}" x2="${w-right}" y2="${y100}"/><text class="axis-label" text-anchor="end" x="${w-right}" y="${y100-6}">基期 100</text>${ticks}<path class="pool-line" d="${path}"/><circle class="pool-point" cx="${xy.at(-1)[0]}" cy="${xy.at(-1)[1]}" r="3.7"/>${dateTicks(p,w,left,right,h)}</svg>`;
   }
-  function renderPoolCharts(){renderFlowChart();renderIndexChart();}
+  function renderPoolCharts(){if(!dashboard)return;renderFlowChart();renderIndexChart();}
   function renderPoolStats(){
     if(!poolStats.length){$("pool-stats-rows").innerHTML='<tr><td colspan="8" class="empty-row">所选区间暂无完整的汪汪队份额记录</td></tr>';$("pool-stats-count").textContent="0 个交易日";return;}
     const rows=[...poolStats].reverse();
@@ -268,6 +285,7 @@
     $("pool-stats-count").textContent=`最近 ${rows.length} 个交易日 · 金额与成交量单位见列名`;
   }
   function renderTable(){
+    if(!dashboard)return;
     document.querySelector(".turnover-tooltip")?.setAttribute("hidden","");
     const query=$("search").value.trim().toLowerCase(),scope=$("scope").value,sort=$("sort").value;
     let rows=(dashboard.etfs||[]).filter(i=>(scope==="all"||i.group===scope)&&(!query||[i.code,i.name,i.index].some(v=>String(v||"").toLowerCase().includes(query))));
@@ -286,7 +304,7 @@
   $("flow-chart").addEventListener("keydown",event=>{const hit=event.target.closest(".flow-hit");if(hit&&(event.key==="Enter"||event.key===" ")){event.preventDefault();showFlowDetail(hit.dataset.date);}});
   $("detail-close").addEventListener("click",()=>{$("flow-detail").hidden=true;selectedFlowDate=null;renderFlowChart();});
   document.querySelectorAll(".pool-range button").forEach(button=>button.addEventListener("click",()=>{const chart=button.dataset.pool;poolRanges[chart]=Number(button.dataset.days);button.parentElement.querySelectorAll("button").forEach(b=>b.classList.toggle("active",b===button));renderPoolCharts();}));
-  document.querySelectorAll(".stats-range button").forEach(button=>button.addEventListener("click",async()=>{statsDays=Number(button.dataset.statsDays);button.parentElement.querySelectorAll("button").forEach(b=>b.classList.toggle("active",b===button));try{const r=await fetch(`/api/pool-stats?days=${statsDays}`,{cache:"no-store"}),data=await r.json();if(!r.ok)throw new Error(data.error||"读取统计失败");poolStats=data.rows||[];renderPoolStats();}catch(e){toast(e.message,true);}}));
+  document.querySelectorAll(".stats-range button").forEach(button=>button.addEventListener("click",()=>{statsDays=Number(button.dataset.statsDays);button.parentElement.querySelectorAll("button").forEach(b=>b.classList.toggle("active",b===button));void loadPoolStats();}));
   $("pool-stats-rows").addEventListener("click",event=>{const row=event.target.closest("tr[data-date]");if(!row)return;showFlowDetail(row.dataset.date).then(()=>$("flow-detail").scrollIntoView({behavior:"smooth",block:"center"}));});
   $("pool-stats-rows").addEventListener("keydown",event=>{const row=event.target.closest("tr[data-date]");if(row&&(event.key==="Enter"||event.key===" ")){event.preventDefault();row.click();}});
   $("search").addEventListener("input",renderTable);$("scope").addEventListener("change",renderTable);$("sort").addEventListener("change",renderTable);
@@ -296,7 +314,7 @@
   $("etf-rows").closest(".table-scroll").addEventListener("scroll",()=>{turnoverTooltip.hidden=true;},{passive:true});
   $("turnover-etf-select").addEventListener("change",event=>{turnoverSelection=event.target.value;renderLiveTurnoverChart();});
   window.addEventListener("resize",()=>{if(liveTurnover)renderLiveTurnoverChart();});
-  loadDashboard().then(()=>refreshNow(true)).catch(e=>{$("signal-title").textContent="数据暂时不可用";$("signal-copy").textContent=e.message;$("etf-rows").innerHTML=`<tr><td colspan="10" class="empty-row">${esc(e.message)}</td></tr>`;toast(e.message,true);});
+  loadDashboard().catch(e=>{if(dashboard)return;if(!liveFlow){$("signal-title").textContent="数据暂时不可用";$("signal-copy").textContent=e.message;}$("etf-rows").innerHTML=`<tr><td colspan="10" class="empty-row">${esc(e.message)}</td></tr>`;toast("主要数据暂时无法加载，请稍后重试",true);});
   refreshLiveFlow();
   refreshLiveTurnover();
   setInterval(refreshLiveFlow,20000);
