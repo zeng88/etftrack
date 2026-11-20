@@ -49,7 +49,7 @@
   async function loadDashboard(){
     const id=++dashboardRequest;void loadPoolStats();void loadFlowOverview();
     const data=await readData("/api/dashboard");if(id!==dashboardRequest)return;if(!data.etfs?.length)throw new Error(data.error||"暂无 ETF 行情数据");
-    dashboard=data;if(liveFlow)applyLiveQuotes(liveFlow,false);render();
+    dashboard=data;if(liveFlow)applyLiveQuotes(liveFlow,false);render();if(typeof window!=="undefined"&&window.markDashboardReady)window.markDashboardReady();
   }
   function render(){renderStatus();renderSummary();renderPoolCharts();renderTable();if(liveFlow)renderLiveFlow();}
   function turnoverAt(points,time){const rows=(points||[]).filter(point=>String(point.time)<=time);return rows.length?Number(rows.at(-1).amount_yi)||0:0;}
@@ -325,7 +325,7 @@
   $("etf-rows").closest(".table-scroll").addEventListener("scroll",()=>{turnoverTooltip.hidden=true;},{passive:true});
   $("turnover-etf-select").addEventListener("change",event=>{turnoverSelection=event.target.value;renderLiveTurnoverChart();});
   window.addEventListener("resize",()=>{if(liveTurnover)renderLiveTurnoverChart();});
-  loadDashboard().catch(e=>{if(dashboard)return;if(!liveFlow){$("signal-title").textContent="数据暂时不可用";$("signal-copy").textContent=e.message;}$("etf-rows").innerHTML=`<tr><td colspan="10" class="empty-row">${esc(e.message)}</td></tr>`;toast("主要数据暂时无法加载，请稍后重试",true);});
+  loadDashboard().catch(e=>{if(dashboard)return;if(typeof window!=="undefined"&&window.markDashboardError)window.markDashboardError();if(!liveFlow){$("signal-title").textContent="数据暂时不可用";$("signal-copy").textContent=e.message;}$("etf-rows").innerHTML=`<tr><td colspan="10" class="empty-row">${esc(e.message)}</td></tr>`;toast("主要数据暂时无法加载，请稍后重试",true);});
   refreshLiveFlow();
   refreshLiveTurnover();
   loadShanghaiIndex();
